@@ -117,7 +117,7 @@ def main():
                 return
 
             # Update Google Sheet
-            update_google_sheet(processed_df, sheet_id, "data")
+            update_google_sheet(processed_df, sheet_id, "users_trier")
             
         except Exception as e:
             logging.error(f"Error processing file: {e}")
