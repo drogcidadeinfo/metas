@@ -46,7 +46,7 @@ def process_excel_data(input_file):
     df = df.drop(df.columns[0], axis=1)
 
     # Keep only required columns
-    df = df[["Código", " Funcionário\t"]]
+    df = df[["Código", "Funcionário "]]
 
     # Values to remove from Código column
     invalid_codigos = [
