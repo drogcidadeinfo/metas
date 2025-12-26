@@ -39,27 +39,30 @@ def process_excel_data(input_file):
 
     logging.info("Processing Excel file...")
 
-    # Read the Excel file (skip header junk)
+    # Read Excel
     df = pd.read_excel(input_file, skiprows=8, header=0)
-
-    # Drop the first column
-    df = df.drop(df.columns[0], axis=1)
-
-    # Keep only required columns
-    df = df[["Código", "Funcionário"]]
-
-    # Values to remove from Código column
-    invalid_codigos = [
-        123456789,
-        987654321,
-        987654322,
-        "Página 1 de"
-    ]
-
-    # Remove rows where Código matches any invalid value
-    df = df[~df["Código"].isin(invalid_codigos)]
-
-    # Reset index
+    
+    # Normalize headers
+    df.columns = (
+        df.columns
+          .astype(str)
+          .str.replace('\xa0', ' ', regex=False)
+          .str.replace(r'\s+', ' ', regex=True)
+          .str.strip()
+    )
+    
+    # Find columns safely
+    codigo_col = next(c for c in df.columns if "Código" in c)
+    func_col   = next(c for c in df.columns if "Funcionário" in c)
+    
+    df = df[[codigo_col, func_col]]
+    
+    # Remove invalid códigos
+    invalid_codigos = {"123456789", "987654321", "987654322", "Página 1 de"}
+    
+    df[codigo_col] = df[codigo_col].astype(str)
+    df = df[~df[codigo_col].isin(invalid_codigos)]
+    
     df = df.reset_index(drop=True)
 
     logging.info(f"Finished processing. Rows remaining: {len(df)}")
