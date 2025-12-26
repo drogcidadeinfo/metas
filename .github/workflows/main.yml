@@ -36,5 +36,5 @@ jobs:
       - name: Process and Upload to Google Sheets
         env:
           GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SHEET_ID }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: python scripts/file_processing/trier_users_proc.py
