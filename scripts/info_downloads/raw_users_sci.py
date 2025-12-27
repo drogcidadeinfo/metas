@@ -14,8 +14,8 @@ os.makedirs(download_dir, exist_ok=True)
 
 print(f"Download directory: {download_dir}", flush=True)
 
-usuario = os.getenv("username")
-senha = os.getenv("password")
+usuario = os.getenv("sci_user")
+senha = os.getenv("sci_password")
 
 if not usuario or not senha:
     raise ValueError("Environment variables 'user' and/or 'password' not set.")
