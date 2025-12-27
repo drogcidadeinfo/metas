@@ -14,8 +14,8 @@ os.makedirs(download_dir, exist_ok=True)
 
 print(f"Download directory: {download_dir}", flush=True)
 
-usuario = os.getenv("sci_user")
-senha = os.getenv("sci_password")
+usuario = os.getenv("username")
+senha = os.getenv("password")
 
 if not usuario or not senha:
     raise ValueError("Environment variables 'user' and/or 'password' not set.")
@@ -252,10 +252,27 @@ try:
         # Botão de saída CSV
         clicar_elemento('//input[@id="1-saida" and @name="saida" and @value="CSV"]')
 
-        text_field_element = wait.until(EC.presence_of_element_located((By.XPATH, '//input[@id="titulo" and @name="titulo"]')))
-        text_field_element.clear()
-        text_field_element.send_keys("COLABORADORES")
+        # Preenche o campo de texto com "COLABORADORES"
+        try:
+            text_field_xpath = '//input[@id="titulo" and @name="titulo"]'
+            text_field_element = wait.until(EC.presence_of_element_located((By.XPATH, text_field_xpath)))
+            text_field_element.clear()
+            text_field_element.send_keys("COLABORADORES")
+        except Exception as e:
+            print(f"Erro ao preencher o campo de texto: {e}", flush=True)
+                
+        # click Select2 container 
+        select2_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "#s2id_situacaoFuncionario .select2-choice")))
+        select2_box.click()
 
+        # click option by visible text
+        option = wait.until(EC.element_to_be_clickable((
+            By.XPATH, "//div[@class='select2-result-label' and contains(normalize-space(), 'Somente ativos')]"
+        )))
+        option.click()
+        time.sleep(3)
+            
+        # Clica no botão "Emitir"
         clicar_elemento('//button[@type="button" and contains(text(), "Emitir")]')
 
         nome_arquivo = "COLABORADORES - 12"
