@@ -36,13 +36,22 @@ def retry_api_call(func, retries=3, delay=2):
 def process_excel_data(input_file):
     logging.info("Processing sales Excel file...")
 
-    df = pd.read_excel(input_file, skiprows=9, header=0, dtype={'qtd. vendas': str})
-    df = df.drop(df.columns[:2], axis=1)
+    # Read Excel and normalize structure
+    df = pd.read_excel(
+        input_file,
+        skiprows=9,
+        header=0,
+        dtype={'qtd. vendas': str}
+    )
 
+    # Drop useless columns
+    df = df.drop(df.columns[:2], axis=1)
+    df = df.drop(columns=["Unnamed: 6"], errors="ignore")
+
+    # Normalize column names
     df.columns = df.columns.str.strip().str.lower()
 
     required_cols = [
-        'código',
         'vendedor',
         'qtd. vendas',
         'valor custo',
@@ -66,47 +75,45 @@ def process_excel_data(input_file):
     resultados = []
 
     for _, row in df.iterrows():
-        codigo_raw = str(row['código']).strip()
+        vendedor_raw = str(row['vendedor']).strip()
 
-        if 'filial:' in codigo_raw.lower():
-            current_filial = row.get('unnamed: 3')
+        # Detect Filial header rows
+        # Example: "F01 - MATRIZ - 06.374.592/0001-98"
+        if vendedor_raw.lower().startswith('f') and '-' in vendedor_raw:
+            current_filial = vendedor_raw.split('-')[0].replace('F', '').strip().zfill(2)
             continue
 
-        if codigo_raw.isdigit():
-            if not current_filial:
-                logging.warning(f"Código {codigo_raw} without Filial. Skipping.")
-                continue
+        # Skip totals or empty lines
+        if vendedor_raw.lower().startswith('total') or vendedor_raw == '':
+            continue
 
-            resultados.append({
-                'Código': codigo_raw,
-                'Filial': current_filial,
-                'Colaborador': row['vendedor'],
-                'Qtd Vendas': format_qtd_vendas(row['qtd. vendas']),
-                'Coluna Vazia': '',
-                'Valor Custo': row['valor custo'],
-                'Faturamento': row['valor vendas']
-            })
+        if not current_filial:
+            logging.warning(f"Row without Filial context: {vendedor_raw}")
+            continue
 
-    result_df = pd.DataFrame(resultados)
+        resultados.append({
+            'Filial': current_filial,
+            'Código': '',  # Not present in this file
+            'Vendedor': vendedor_raw,
+            'Qtd. Vendas': format_qtd_vendas(row['qtd. vendas']),
+            'Valor Custo': row['valor custo'],
+            'Valor Vendas': row['valor vendas']
+        })
 
-    # Drop first column
-    # result_df = result_df.iloc[:, 1:]
-    
-    # Apply final headers
-    '''result_df.columns = [
-        'Código',
-        'Filial',
-        'Colaborador',
-        'Qtd.',
-        'Valor Custo',
-        'Valor'
-    ]'''
-    
-    # result_df["Filial"] = result_df["Filial"].astype(int).astype(str).str.zfill(2)
-    # result_df = result_df[["Filial", "Código", "Colaborador", "Qtd.", "Valor Custo", "Valor"]]
-    
+    result_df = pd.DataFrame(
+        resultados,
+        columns=[
+            'Filial',
+            'Código',
+            'Vendedor',
+            'Qtd. Vendas',
+            'Valor Custo',
+            'Valor Vendas'
+        ]
+    )
+
     logging.info(f"Rows processed: {len(result_df)}")
-    
+
     return result_df
 
 def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
