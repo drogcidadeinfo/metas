@@ -114,6 +114,10 @@ def main():
     download_dir = "/home/runner/work/metas/metas/"
     sheet_id = os.getenv("SHEET_ID")
 
+    logging.info(f"Directory exists: {os.path.exists(download_dir)}")
+    logging.info(f"Directory contents at start: {os.listdir(download_dir)}")
+    time.sleep(15)
+
     file_path = get_latest_file(download_dir)
 
     if not file_path:
