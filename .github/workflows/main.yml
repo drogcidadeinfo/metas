@@ -36,8 +36,8 @@ jobs:
           trier_password: ${{ secrets.TRIER_PASSWORD }}
         run: python scripts/info_downloads/raw_comissao_vendedor.py
 
-      #- name: Process and Upload to Google Sheets
-        #env:
-          #GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        #run: python scripts/file_processing/sci_users_proc.py
+      - name: Process and Upload to Google Sheets
+        env:
+          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/file_processing/comissao_vendedor_proc.py
