@@ -46,81 +46,12 @@ def process_excel_data(input_file):
 
     # Drop useless columns
     df = df.drop(df.columns[:2], axis=1)
-    df = df.drop(columns=["Unnamed: 6", "Margem Lucro"], errors="ignore")
+    df = df.drop(columns=["Unnamed: 6", "Qtd. Vendas","Valor Custo", "Margem Lucro"], errors="ignore")
+    df = df[~df.iloc[:, 0].str.contains('Total Filial:|Total Geral:', na=False)]
 
     print(df.head(11))
 
-    # 1. Forward fill the Filial information 
-    df['Filial'] = df.iloc[:, 0].ffill()
     
-    # 2. Identify header rows (rows containing 'Filial:' or 'Total Filial:')
-    is_filial_header = df.iloc[:, 0].astype(str).str.contains('Filial:', na=False)
-    is_total = df.iloc[:, 0].astype(str).str.contains('Total Filial:', na=False)
-    
-    # 3. Remove header and total rows
-    df = df[~is_filial_header & ~is_total].reset_index(drop=True)
-    
-    # 4. Extract the proper columns 
-    # Assuming columns in order: Filial, Código, Vendedor, Qtd. Vendas, Valor Custo, Valor Vendas, Margem Lucro
-    
-    # handle merged cells splitting
-    # Check if we have the right number of columns
-    if df.shape[1] >= 7:
-        # If we already have separated columns
-        df.columns = ['Filial', 'Código', 'Vendedor', 'Qtd. Vendas', 'Valor Custo', 'Valor Vendas', 'Margem Lucro']
-    else:
-        # If data is in fewer columns (merged), we need to split
-        
-        # Create a new DataFrame with proper structure
-        result_data = []
-        
-        for _, row in df.iterrows():
-            # Split the combined data
-            # This pattern depends on your actual data structure
-            filial = row['Filial']
-            
-            # Try to extract the code and name (they might be in the second column)
-            if pd.notna(row.iloc[1]):
-                parts = str(row.iloc[1]).split()
-                if len(parts) >= 2:
-                    codigo = parts[0]
-                    vendedor = ' '.join(parts[1:])
-                else:
-                    codigo = parts[0] if parts else ''
-                    vendedor = ''
-            else:
-                codigo = ''
-                vendedor = ''
-            
-            # Extract the numeric values
-            qtd_vendas = row.iloc[2] if len(row) > 2 else ''
-            valor_custo = row.iloc[3] if len(row) > 3 else ''
-            valor_vendas = row.iloc[4] if len(row) > 4 else ''
-            margem_lucro = row.iloc[5] if len(row) > 5 else ''
-            
-            result_data.append([
-                filial, codigo, vendedor, qtd_vendas, 
-                valor_custo, valor_vendas, margem_lucro
-            ])
-        
-        df = pd.DataFrame(
-            result_data, 
-            columns=['Filial', 'Código', 'Vendedor', 'Qtd. Vendas', 
-                    'Valor Custo', 'Valor Vendas', 'Margem Lucro']
-        )
-    
-    # 5. Clean up the Filial column (remove 'Filial: ' prefix if present)
-    df['Filial'] = df['Filial'].astype(str).str.replace('Filial:', '').str.strip()
-    
-    # 6. Remove any completely empty rows
-    df = df.dropna(how='all')
-    
-    # 7. Convert numeric columns to appropriate types
-    numeric_cols = ['Qtd. Vendas', 'Valor Custo', 'Valor Vendas', 'Margem Lucro']
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    
-    return df.reset_index(drop=True)
 
 def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
     logging.info("Checking Google credentials...")
