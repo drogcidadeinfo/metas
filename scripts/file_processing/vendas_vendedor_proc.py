@@ -67,11 +67,14 @@ def process_excel_data(input_file):
         codigo_raw = str(row['código']).strip()
 
         if 'filial:' in codigo_raw.lower():
-            raw_filial = str(row.get('unnamed: 3', '')).strip()
+            raw_filial = row.get('unnamed: 3')
 
-            if raw_filial.isdigit():
-                current_filial = raw_filial
-            else:
+            try:
+                if pd.notna(raw_filial):
+                    current_filial = str(int(float(raw_filial)))
+                else:
+                    current_filial = None
+            except Exception:
                 logging.warning(f"Ignoring invalid filial value: '{raw_filial}'")
                 current_filial = None
 
@@ -94,10 +97,13 @@ def process_excel_data(input_file):
 
     result_df = pd.DataFrame(resultados)
 
-    # Drop ONLY the intended column
-    result_df = result_df.drop(columns=['Coluna Vazia'])
+    if result_df.empty:
+        logging.warning("No valid rows extracted from Excel.")
+        return result_df
 
-    # Apply final headers
+    if 'Coluna Vazia' in result_df.columns:
+        result_df = result_df.drop(columns=['Coluna Vazia'])
+
     result_df.columns = [
         'Código',
         'Filial',
@@ -107,7 +113,6 @@ def process_excel_data(input_file):
         'Valor'
     ]
 
-    # Safe filial formatting
     result_df["Filial"] = result_df["Filial"].astype(int).astype(str).str.zfill(2)
 
     logging.info(f"Rows processed: {len(result_df)}")
