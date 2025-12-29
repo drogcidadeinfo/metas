@@ -48,6 +48,8 @@ def process_excel_data(input_file):
     df = df.drop(df.columns[:2], axis=1)
     df = df.drop(columns=["Unnamed: 6"], errors="ignore")
 
+    print(df.head(11))
+
     # Normalize column names
     df.columns = df.columns.str.strip().str.lower()
 
