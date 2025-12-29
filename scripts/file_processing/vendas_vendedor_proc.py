@@ -106,7 +106,7 @@ def process_excel_data(input_file):
     ]
     
     result_df["Filial"] = result_df["Filial"].astype(int).astype(str).str.zfill(2)
-    result_df = result_df[["Filial", "Código", "Colaborador", "Qtd.", "Valor Custo", "Valor"]]
+    # result_df = result_df[["Filial", "Código", "Colaborador", "Qtd.", "Valor Custo", "Valor"]]
     
     logging.info(f"Rows processed: {len(result_df)}")
     
