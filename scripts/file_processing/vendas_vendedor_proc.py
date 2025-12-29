@@ -36,12 +36,7 @@ def retry_api_call(func, retries=3, delay=2):
 def process_excel_data(input_file):
     logging.info("Processing sales Excel file...")
 
-    df = pd.read_excel(
-        input_file,
-        header=9,
-        dtype={'qtd. vendas': str}
-    )
-
+    df = pd.read_excel(input_file, header=9, dtype={'qtd. vendas': str})
     df.columns = df.columns.str.strip().str.lower()
 
     required_cols = [
@@ -72,12 +67,19 @@ def process_excel_data(input_file):
         codigo_raw = str(row['código']).strip()
 
         if 'filial:' in codigo_raw.lower():
-            current_filial = row.get('unnamed: 3')
+            raw_filial = str(row.get('unnamed: 3', '')).strip()
+
+            if raw_filial.isdigit():
+                current_filial = raw_filial
+            else:
+                logging.warning(f"Ignoring invalid filial value: '{raw_filial}'")
+                current_filial = None
+
             continue
 
         if codigo_raw.isdigit():
             if not current_filial:
-                logging.warning(f"Código {codigo_raw} without Filial. Skipping.")
+                logging.warning(f"Código {codigo_raw} without valid Filial. Skipping.")
                 continue
 
             resultados.append({
@@ -92,9 +94,9 @@ def process_excel_data(input_file):
 
     result_df = pd.DataFrame(resultados)
 
-    # Drop first column
-    result_df = result_df.iloc[:, 1:]
-    
+    # Drop ONLY the intended column
+    result_df = result_df.drop(columns=['Coluna Vazia'])
+
     # Apply final headers
     result_df.columns = [
         'Código',
@@ -104,14 +106,12 @@ def process_excel_data(input_file):
         'Valor Custo',
         'Valor'
     ]
-    
-    result_df["Filial"] = result_df["Filial"].astype(int).astype(str).str.zfill(2)
-    # result_df = result_df[["Filial", "Código", "Colaborador", "Qtd.", "Valor Custo", "Valor"]]
-    
-    logging.info(f"Rows processed: {len(result_df)}")
-    
-    return result_df
 
+    # Safe filial formatting
+    result_df["Filial"] = result_df["Filial"].astype(int).astype(str).str.zfill(2)
+
+    logging.info(f"Rows processed: {len(result_df)}")
+    return result_df
 
 def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
     logging.info("Checking Google credentials...")
