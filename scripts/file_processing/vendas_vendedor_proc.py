@@ -90,7 +90,7 @@ def process_excel_data(input_file):
     result_df = pd.DataFrame(resultados)
 
     # Drop first column
-    result_df = result_df.iloc[:, 1:]
+    # result_df = result_df.iloc[:, 1:]
     
     # Apply final headers
     '''result_df.columns = [
