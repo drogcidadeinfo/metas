@@ -40,18 +40,74 @@ def process_excel_data(input_file):
     df = pd.read_excel(
         input_file,
         skiprows=9,
-        header=0,
-        dtype={'qtd. vendas': str}
+        header=0
     )
 
-    # Drop useless columns
     df = df.drop(df.columns[:2], axis=1)
     df = df.drop(columns=["Unnamed: 6", "Qtd. Vendas","Valor Custo", "Margem Lucro"], errors="ignore")
-    df = df[~df.iloc[:, 0].str.contains('Total Filial:|Total Geral:', na=False)]
-
-    print(df.head(11))
-
     
+    # Remove total rows FIRST
+    df = df[~df.iloc[:, 0].astype(str).str.contains('Total Filial:|Total Geral:', na=False)]
+    
+    # Better approach: Process row by row
+    current_filial = None
+    data_rows = []
+    
+    for idx, row in df.iterrows():
+        first_val = str(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
+        
+        # Check if this is a Filial row
+        if 'Filial:' in first_val:
+            # Extract the Filial number (it's usually the first character after "Filial:")
+            # Filial number might be in column 1
+            if pd.notna(row.iloc[1]):
+                current_filial = str(row.iloc[1]).strip()
+            continue
+        
+        # Check if this is a data row (code should be numeric)
+        if first_val.replace('.', '').replace(',', '').isdigit():
+            code = first_val.strip()
+            
+            # Find the Vendedor name - it could be in column 1 or 2
+            vendedor = ''
+            valor_vendas = ''
+            
+            # Try column 2 first for Vendedor
+            if len(row) > 2 and pd.notna(row.iloc[2]):
+                vendedor = str(row.iloc[2]).strip()
+                if len(row) > 3 and pd.notna(row.iloc[3]):
+                    valor_vendas = str(row.iloc[3])
+            # Otherwise try column 1
+            elif len(row) > 1 and pd.notna(row.iloc[1]):
+                vendedor = str(row.iloc[1]).strip()
+                if len(row) > 2 and pd.notna(row.iloc[2]):
+                    valor_vendas = str(row.iloc[2])
+            
+            # Only add if we have all required data
+            if code and vendedor and current_filial:
+                data_rows.append({
+                    'Filial': current_filial,
+                    'Código': code,
+                    'Vendedor': vendedor,
+                    'Valor Vendas': valor_vendas
+                })
+    
+    # Create the clean DataFrame
+    df_clean = pd.DataFrame(data_rows)
+    
+    # Convert Filial to integer (extract just the number)
+    df_clean['Filial'] = df_clean['Filial'].astype(str).str.extract(r'(\d+)')[0].astype(int)
+    
+    # Convert Valor Vendas to numeric
+    df_clean['Valor Vendas'] = (
+        df_clean['Valor Vendas']
+        .astype(str)
+        .str.replace('.', '', regex=False)  # Remove thousands separator
+        .str.replace(',', '.', regex=False)  # Replace comma with decimal point
+        .astype(float)
+    )
+
+    return df_clean
 
 def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
     logging.info("Checking Google credentials...")
