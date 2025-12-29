@@ -1,5 +1,6 @@
 import os
 import time
+import shutil
 import logging
 from datetime import datetime, timedelta
 from selenium import webdriver
