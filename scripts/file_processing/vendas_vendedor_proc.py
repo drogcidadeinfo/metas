@@ -109,7 +109,54 @@ def process_excel_data(input_file):
 
     return df_clean
 
-def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
+def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
+    logging.info("Checking Google credentials...")
+
+    creds_json = os.getenv("GSA_CREDENTIALS")
+    if not creds_json:
+        raise RuntimeError("Google credentials not found.")
+
+    creds = Credentials.from_service_account_info(
+        json.loads(creds_json),
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+    )
+
+    client = gspread.authorize(creds)
+    worksheet = client.open_by_key(sheet_id).worksheet(worksheet_name)
+
+    # Fill NaN values with empty strings
+    df = df.fillna("")
+    
+    # Add headers to the data
+    data_with_headers = [df.columns.tolist()] + df.values.tolist()
+    
+    # Calculate range
+    start_cell = f"{start_col}1"
+    end_row = len(data_with_headers)  # Include header row
+    end_col = chr(ord(start_col) + len(df.columns) - 1)
+    dynamic_range = f"{start_col}1:{end_col}{end_row}"
+
+    logging.info(f"Clearing and updating range {dynamic_range}")
+    
+    # Clear the range first
+    worksheet.batch_clear([dynamic_range])
+    
+    # Upload data with headers
+    logging.info("Uploading data with headers...")
+    retry_api_call(
+        lambda: worksheet.update(
+            dynamic_range,
+            data_with_headers,
+            value_input_option="USER_ENTERED"
+        )
+    )
+
+    logging.info(f"Google Sheet updated successfully with {len(df)} rows of data.")
+
+'''def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
     logging.info("Checking Google credentials...")
 
     creds_json = os.getenv("GSA_CREDENTIALS")
@@ -146,7 +193,7 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
         )
     )
 
-    logging.info("Google Sheet updated successfully.")
+    logging.info("Google Sheet updated successfully.")'''
 
 def main():
     download_dir = "/home/runner/work/metas/metas/"
