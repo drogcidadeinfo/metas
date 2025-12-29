@@ -1,4 +1,4 @@
-name: estq_negativo_up
+name: metas_up
 
 on:
   workflow_dispatch:
