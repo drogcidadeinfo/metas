@@ -36,11 +36,8 @@ def retry_api_call(func, retries=3, delay=2):
 def process_excel_data(input_file):
     logging.info("Processing sales Excel file...")
 
-    df = pd.read_excel(
-        input_file,
-        header=9,
-        dtype={'qtd. vendas': str}
-    )
+    df = pd.read_excel(input_file, skiprows=9, header=0, dtype={'qtd. vendas': str})
+    df = df.drop(df.columns[:2], axis=1)
 
     df.columns = df.columns.str.strip().str.lower()
 
