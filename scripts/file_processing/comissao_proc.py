@@ -14,8 +14,7 @@ from openpyxl.styles import Font
 # Config logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-def get_latest_file(extension='xls', directory='.'):
-    # Get the most recently modified file with a given extension.
+def get_latest_file(directory='.', extension='xls'):
     files = glob.glob(os.path.join(directory, f'*.{extension}'))
     if not files:
         logging.warning("No files found with the specified extension.")
