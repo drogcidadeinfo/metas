@@ -191,7 +191,7 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         .astype(int, errors='ignore')
     )
     
-    # FIXED: Handle numbers that are already multiplied by 100
+    '''# FIXED: Handle numbers that are already multiplied by 100
     def parse_brazilian_number(value):
         """Parse Brazilian number format, handling Google Sheets auto-conversion"""
         if pd.isna(value) or value == "":
@@ -260,7 +260,80 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
             else:
                 # Just try to convert
                 return float(val_str.replace(',', '.')) / 100  # Divide by 100
-        return None
+        return None'''
+
+    def parse_brazilian_number(value):
+        """Parse Brazilian number format, ensuring 2 decimal places"""
+        if pd.isna(value) or value == "":
+            return None
+        
+        # If it's already a number from Google Sheets
+        if isinstance(value, (int, float)):
+            # Google Sheets converts "40848,8" to 408488.0 (multiplied by 10)
+            # We need to divide by 10, then ensure 2 decimal places
+            str_val = str(value)
+            
+            # Check if it looks like a multiplied value
+            # Values like 408488.0 (from 40848,8) or 597656.0 (from 5976,56)
+            if '.' in str_val:
+                parts = str_val.split('.')
+                if len(parts) == 2:
+                    integer_part = parts[0]
+                    decimal_part = parts[1]
+                    
+                    # If it ends with .0 and the last 2 digits of integer part are not "00"
+                    # it might need dividing
+                    if decimal_part == '0' and len(integer_part) >= 2:
+                        last_two_digits = integer_part[-2:]
+                        if last_two_digits != '00':
+                            # This might be a value like 408488.0 (from 40848,8)
+                            # Try dividing by 10 first
+                            divided_by_10 = value / 10
+                            # Then check if dividing by 100 makes more sense
+                            divided_by_100 = value / 100
+                            
+                            # Check which one gives a more reasonable value
+                            if 1 <= divided_by_10 <= 1000000:
+                                return round(divided_by_10, 2)
+                            elif 1 <= divided_by_100 <= 1000000:
+                                return round(divided_by_100, 2)
+            
+            # If no special handling needed, just round to 2 decimals
+            return round(float(value), 2)
+        
+        # If it's a string (shouldn't happen with Google Sheets but just in case)
+        val_str = str(value).strip()
+        val_str = val_str.replace('R$', '').replace('$', '').strip()
+        
+        if not val_str:
+            return None
+        
+        # Handle comma as decimal separator (like "40848,8" or "5976,56")
+        if ',' in val_str:
+            parts = val_str.split(',')
+            integer_part = parts[0].replace('.', '')  # Remove thousands separators
+            decimal_part = parts[1] if len(parts) > 1 else ""
+            
+            # Ensure decimal part has exactly 2 digits
+            if len(decimal_part) == 0:
+                decimal_part = '00'
+            elif len(decimal_part) == 1:
+                decimal_part += '0'  # "8" becomes "80"
+            elif len(decimal_part) > 2:
+                decimal_part = decimal_part[:2]  # Truncate if more than 2 digits
+            
+            try:
+                return float(f"{integer_part}.{decimal_part}")
+            except:
+                return None
+        
+        # No comma, try regular float conversion
+        try:
+            # Remove any dots (thousands separators) and convert
+            cleaned = val_str.replace('.', '').replace(',', '.')
+            return round(float(cleaned), 2)
+        except:
+            return None
     
     # FIXED: Simpler formatting function
     def format_brazilian_currency(value):
