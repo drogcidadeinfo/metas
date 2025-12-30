@@ -263,37 +263,43 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         return None'''
 
     def parse_brazilian_number(value):
-        """Simple parser: always divide by appropriate power of 10"""
+        """
+        Parse Brazilian-formatted numbers correctly.
+    
+        Rules:
+        - No comma → .00
+        - One decimal digit → pad with zero
+        - Two decimal digits → keep
+        - Dot is thousands separator
+        """
         if pd.isna(value) or value == "":
             return None
-        
+    
         try:
-            num = float(value)
-            str_num = str(int(num))  # Get integer part as string
-            
-            # Rules based on the integer value
-            if num < 100:
-                # Small numbers like 14, 50, 99
-                return round(num, 2)  # Already correct
-            
-            elif 100 <= num <= 999:
-                # Numbers like 142 (from 14,2) or 500 (from 50,0)
-                # Probably has 1 decimal place originally
-                return round(num / 10, 2)
-            
-            elif 1000 <= num <= 999999:
-                # Numbers like 597656 (from 5976,56) or 125848 (from 12584,8)
-                # Probably has 2 decimal places originally
-                return round(num / 100, 2)
-            
-            elif num >= 1000000:
-                # Very large numbers, divide by 100
-                return round(num / 100, 2)
-            
+            s = str(value).strip()
+    
+            # Remove thousands separators
+            s = s.replace(".", "")
+    
+            # Handle decimal comma
+            if "," in s:
+                integer_part, decimal_part = s.split(",", 1)
+    
+                if len(decimal_part) == 0:
+                    decimal_part = "00"
+                elif len(decimal_part) == 1:
+                    decimal_part = decimal_part + "0"
+                else:
+                    decimal_part = decimal_part[:2]
+    
             else:
-                return round(num, 2)
-                
-        except:
+                integer_part = s
+                decimal_part = "00"
+    
+            normalized = f"{integer_part}.{decimal_part}"
+            return round(float(normalized), 2)
+    
+        except Exception:
             return None
     
     # FIXED: Simpler formatting function
