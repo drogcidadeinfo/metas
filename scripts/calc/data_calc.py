@@ -147,6 +147,89 @@ def build_calc_base(df_trier, df_sci):
 # Step 2: Update Valor Realizado from VENDAS_VENDEDOR
 # --------------------------------------------------
 def update_valor_realizado_from_vendas(sheet, df_calc):
+    """
+    Copy Valor Vendas → Valor Realizado
+    Match strictly on Filial + Código
+    Keep values numeric (NO formatting here)
+    """
+
+    logging.info("Reading VENDAS_VENDEDOR worksheet...")
+
+    try:
+        df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
+    except Exception as e:
+        logging.warning(f"Could not read VENDAS_VENDEDOR worksheet: {e}")
+        return df_calc
+
+    if df_vendas.empty:
+        logging.warning("VENDAS_VENDEDOR worksheet is empty.")
+        return df_calc
+
+    # Normalize column names
+    df_vendas.columns = df_vendas.columns.str.strip()
+
+    required_cols = ["Filial", "Código", "Valor Vendas"]
+    for col in required_cols:
+        if col not in df_vendas.columns:
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR.")
+            return df_calc
+
+    # -------------------------
+    # Normalize keys ONLY
+    # -------------------------
+    df_vendas["Filial"] = (
+        df_vendas["Filial"]
+        .astype(str)
+        .str.upper()
+        .str.replace("F", "", regex=False)
+        .astype(int)
+    )
+
+    df_vendas["Código"] = (
+        df_vendas["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .astype(int)
+    )
+
+    df_calc["Filial"] = df_calc["Filial"].astype(int)
+    df_calc["Código"] = df_calc["Código"].astype(int)
+
+    # -------------------------
+    # Ensure Valor Vendas is numeric
+    # -------------------------
+    df_vendas["Valor Vendas"] = pd.to_numeric(
+        df_vendas["Valor Vendas"],
+        errors="coerce"
+    ).fillna(0)
+
+    # -------------------------
+    # Merge and copy
+    # -------------------------
+    df_merged = df_calc.merge(
+        df_vendas[["Filial", "Código", "Valor Vendas"]],
+        on=["Filial", "Código"],
+        how="left"
+    )
+
+    df_merged["Valor Realizado"] = (
+        df_merged["Valor Vendas"]
+        .fillna(0)
+        .round(2)
+    )
+
+    df_merged = df_merged.drop(columns=["Valor Vendas"])
+
+    logging.info(
+        f"Valor Realizado updated for {(df_merged['Valor Realizado'] > 0).sum()} rows"
+    )
+
+    return df_merged
+
+'''# --------------------------------------------------
+# Step 2: Update Valor Realizado from VENDAS_VENDEDOR
+# --------------------------------------------------
+def update_valor_realizado_from_vendas(sheet, df_calc):
     """Update Valor Realizado in calc from VENDAS_VENDEDOR using Filial + Código match."""
     
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
@@ -190,77 +273,6 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         .str.replace(".0", "", regex=False)
         .astype(int, errors='ignore')
     )
-    
-    '''# FIXED: Handle numbers that are already multiplied by 100
-    def parse_brazilian_number(value):
-        """Parse Brazilian number format, handling Google Sheets auto-conversion"""
-        if pd.isna(value) or value == "":
-            return None
-        
-        # Check if value is already a number (float or int)
-        if isinstance(value, (int, float)):
-            # Google Sheets might have already converted "5976,56" to 597656.0
-            # We need to check if this looks like it was originally "xxxx,xx"
-            # by checking if it's unusually large (ends with many zeros)
-            str_val = str(value)
-            
-            # If it ends with .0 and has at least 4 digits before decimal,
-            # it might be a multiplied value
-            if str_val.endswith('.0'):
-                num_part = str_val[:-2]
-                if len(num_part) >= 4 and num_part[-2:] == '00':
-                    # Could be like "597656.0" (original "5976,56")
-                    # Try dividing by 100
-                    try:
-                        divided = value / 100
-                        # Check if the divided value looks more reasonable
-                        # (not too small, not too large)
-                        if 1 <= divided <= 1000000:  # Reasonable sales range
-                            return divided
-                    except:
-                        pass
-            
-            # Otherwise, return the value as is (it might already be correct)
-            return float(value)
-        
-        # If it's a string, try parsing
-        val_str = str(value).strip()
-        
-        # Remove any R$ or currency symbols
-        val_str = val_str.replace('R$', '').replace('$', '').strip()
-        
-        # Remove any spaces
-        val_str = val_str.replace(' ', '')
-        
-        # If empty after cleaning
-        if not val_str:
-            return None
-        
-        # Try different parsing strategies
-        try:
-            # Strategy 1: Direct float conversion (for numbers like "597656.0")
-            return float(val_str) / 100  # Divide by 100 since Google multiplied it
-        except:
-            # Strategy 2: Brazilian format parsing
-            if ',' in val_str and '.' in val_str:
-                # Brazilian format: 1.234,56
-                integer_part = val_str.split(',')[0].replace('.', '')
-                decimal_part = val_str.split(',')[1]
-                if len(decimal_part) > 2:
-                    decimal_part = decimal_part[:2]
-                return float(f"{integer_part}.{decimal_part}")
-            elif ',' in val_str and '.' not in val_str:
-                # European format: 1234,56
-                parts = val_str.split(',')
-                integer_part = parts[0]
-                decimal_part = parts[1] if len(parts) > 1 else "00"
-                if len(decimal_part) > 2:
-                    decimal_part = decimal_part[:2]
-                return float(f"{integer_part}.{decimal_part}")
-            else:
-                # Just try to convert
-                return float(val_str.replace(',', '.')) / 100  # Divide by 100
-        return None'''
 
     def parse_brazilian_number(value):
         """
@@ -401,7 +413,7 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         sample_vendas = df_vendas[["Filial", "Código"]].head(5).to_dict('records')
         logging.warning(f"Sample VENDAS_VENDEDOR pairs: {sample_vendas}")
     
-    return df_merged
+    return df_merged'''
     
 # --------------------------------------------------
 # Write to calc worksheet
