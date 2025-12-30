@@ -52,6 +52,49 @@ def read_worksheet_as_df(sheet, worksheet_name):
     ws = sheet.worksheet(worksheet_name)
     return pd.DataFrame(ws.get_all_records())
 
+def add_valor_realizado(calc_df, df_vendas):
+    logging.info("Copying Valor Vendas to Valor Realizado...")
+
+    if df_vendas.empty:
+        calc_df["Valor Realizado"] = 0
+        return calc_df
+
+    # Normalize Código
+    df_vendas["Código"] = (
+        df_vendas["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .astype(int)
+    )
+
+    calc_df["Código"] = calc_df["Código"].astype(int)
+
+    # Normalize Valor Vendas
+    df_vendas["Valor Vendas"] = (
+        df_vendas["Valor Vendas"]
+        .astype(str)
+        .str.replace(",", ".", regex=False)
+        .astype(float)
+    )
+
+    # Merge (1:1 expected)
+    calc_df = calc_df.merge(
+        df_vendas[["Código", "Valor Vendas"]],
+        on="Código",
+        how="left"
+    )
+
+    calc_df["Valor Realizado"] = (
+        calc_df["Valor Vendas"]
+        .fillna(0)
+        .round(2)
+    )
+
+    calc_df = calc_df.drop(columns=["Valor Vendas"])
+
+    logging.info("Valor Realizado populated.")
+    return calc_df
+
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
 # --------------------------------------------------
@@ -136,7 +179,7 @@ def build_calc_base(df_trier, df_sci):
     )
     
     calc_df = calc_df[calc_df["Função"].isin(ALLOWED_FUNCOES)]
-    
+
     # Sort by Filial (A–Z)
     calc_df = calc_df.sort_values(by="Filial").reset_index(drop=True)
 
@@ -184,6 +227,9 @@ def main():
         return
 
     df_calc = build_calc_base(df_trier, df_sci)
+
+    df_vendas_vendedor = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
+    df_calc = add_valor_realizado(df_calc, df_vendas_vendedor)
 
     if df_calc.empty:
         logging.warning("Calc dataframe is empty. Nothing to upload.")
