@@ -52,49 +52,6 @@ def read_worksheet_as_df(sheet, worksheet_name):
     ws = sheet.worksheet(worksheet_name)
     return pd.DataFrame(ws.get_all_records())
 
-def add_valor_realizado(calc_df, df_vendas):
-    logging.info("Copying Valor Vendas to Valor Realizado...")
-
-    if df_vendas.empty:
-        calc_df["Valor Realizado"] = 0
-        return calc_df
-
-    # Normalize Código
-    df_vendas["Código"] = (
-        df_vendas["Código"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .astype(int)
-    )
-
-    calc_df["Código"] = calc_df["Código"].astype(int)
-
-    # Normalize Valor Vendas
-    df_vendas["Valor Vendas"] = (
-        df_vendas["Valor Vendas"]
-        .astype(str)
-        .str.replace(",", ".", regex=False)
-        .astype(float)
-    )
-
-    # Merge (1:1 expected)
-    calc_df = calc_df.merge(
-        df_vendas[["Código", "Valor Vendas"]],
-        on="Código",
-        how="left"
-    )
-
-    calc_df["Valor Realizado"] = (
-        calc_df["Valor Vendas"]
-        .fillna(0)
-        .round(2)
-    )
-
-    calc_df = calc_df.drop(columns=["Valor Vendas"])
-
-    logging.info("Valor Realizado populated.")
-    return calc_df
-
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
 # --------------------------------------------------
@@ -187,6 +144,126 @@ def build_calc_base(df_trier, df_sci):
     return calc_df
 
 # --------------------------------------------------
+# Step 2: Update Valor Realizado from VENDAS_VENDEDORES
+# --------------------------------------------------
+def update_valor_realizado_from_vendas(sheet, df_calc):
+    """Update Valor Realizado in calc from VENDAS_VENDEDORES using Filial + Código match."""
+    
+    logging.info("Reading VENDAS_VENDEDORES worksheet...")
+    
+    # Read the VENDAS_VENDEDORES worksheet
+    try:
+        df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDORES")
+    except Exception as e:
+        logging.warning(f"Could not read VENDAS_VENDEDORES worksheet: {e}")
+        return df_calc
+    
+    if df_vendas.empty:
+        logging.warning("VENDAS_VENDEDORES worksheet is empty.")
+        return df_calc
+    
+    # Prepare VENDAS_VENDEDORES data
+    # Extract relevant columns and normalize names
+    df_vendas_clean = df_vendas.copy()
+    
+    # Ensure column names are properly formatted
+    df_vendas_clean.columns = df_vendas_clean.columns.str.strip()
+    
+    # Check required columns exist
+    required_cols = ["Filial", "Código", "Valor Vendas"]
+    for col in required_cols:
+        if col not in df_vendas_clean.columns:
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDORES worksheet.")
+            return df_calc
+    
+    # Clean and convert data types
+    # For Filial: handle both "F01" format and numeric
+    def normalize_filial(val):
+        val_str = str(val).strip().upper()
+        if val_str.startswith('F'):
+            return int(val_str.replace('F', ''))
+        try:
+            return int(float(val_str))
+        except:
+            return None
+    
+    # For Código: remove .0 and convert to int
+    def normalize_codigo(val):
+        val_str = str(val).strip()
+        val_str = val_str.replace('.0', '') if '.0' in val_str else val_str
+        try:
+            return int(float(val_str)) if val_str else None
+        except:
+            return None
+    
+    df_vendas_clean["Filial_norm"] = df_vendas_clean["Filial"].apply(normalize_filial)
+    df_vendas_clean["Código_norm"] = df_vendas_clean["Código"].apply(normalize_codigo)
+    
+    # Clean Valor Vendas - remove currency symbols, commas, etc.
+    def clean_valor_vendas(val):
+        if pd.isna(val) or val == "":
+            return 0.0
+        val_str = str(val).strip()
+        # Remove R$, currency symbols, thousands separators
+        val_str = val_str.replace('R$', '').replace('$', '').replace(',', '.')
+        # Keep only numbers and decimal point
+        val_str = ''.join(c for c in val_str if c.isdigit() or c == '.')
+        try:
+            return float(val_str) if val_str else 0.0
+        except:
+            return 0.0
+    
+    df_vendas_clean["Valor Vendas_clean"] = df_vendas_clean["Valor Vendas"].apply(clean_valor_vendas)
+    
+    # Create a lookup dictionary with (Filial, Código) as key
+    vendas_lookup = {}
+    for _, row in df_vendas_clean.iterrows():
+        filial = row.get("Filial_norm")
+        codigo = row.get("Código_norm")
+        valor = row.get("Valor Vendas_clean")
+        
+        if filial is not None and codigo is not None:
+            vendas_lookup[(filial, codigo)] = valor
+    
+    logging.info(f"Created lookup for {len(vendas_lookup)} vendas records")
+    
+    # Update df_calc with matched values
+    updated_count = 0
+    for idx, row in df_calc.iterrows():
+        filial = row.get("Filial")
+        codigo = row.get("Código")
+        
+        # Ensure both values are numeric
+        try:
+            filial_num = int(filial) if not pd.isna(filial) else None
+            codigo_num = int(codigo) if not pd.isna(codigo) else None
+        except (ValueError, TypeError):
+            continue
+        
+        lookup_key = (filial_num, codigo_num)
+        
+        if lookup_key in vendas_lookup:
+            # Format as currency (R$ with 2 decimals)
+            valor_vendas = vendas_lookup[lookup_key]
+            df_calc.at[idx, "Valor Realizado"] = f"R$ {valor_vendas:,.2f}"
+            updated_count += 1
+    
+    logging.info(f"Updated Valor Realizado for {updated_count} records")
+    
+    # If no matches found, log details for debugging
+    if updated_count == 0 and len(df_calc) > 0:
+        logging.warning("No matches found between calc and VENDAS_VENDEDORES")
+        # Log first few Filial/Código pairs for debugging
+        sample_pairs = df_calc[["Filial", "Código"]].head(5).to_dict('records')
+        logging.warning(f"Sample calc pairs: {sample_pairs}")
+        
+        # Also show sample from VENDAS_VENDEDORES
+        sample_vendas = df_vendas_clean[["Filial", "Código"]].head(5).to_dict('records')
+        logging.warning(f"Sample VENDAS_VENDEDORES pairs: {sample_vendas}")
+    
+    return df_calc
+
+# --------------------------------------------------
 # Write to calc worksheet
 # --------------------------------------------------
 def update_calc_sheet(sheet, df):
@@ -228,12 +305,12 @@ def main():
 
     df_calc = build_calc_base(df_trier, df_sci)
 
-    df_vendas_vendedor = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
-    df_calc = add_valor_realizado(df_calc, df_vendas_vendedor)
-
     if df_calc.empty:
         logging.warning("Calc dataframe is empty. Nothing to upload.")
         return
+
+    # NEW STEP: Update Valor Realizado from VENDAS_VENDEDORES
+    df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
