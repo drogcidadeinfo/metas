@@ -123,6 +123,7 @@ def build_calc_base(df_trier, df_sci):
         "FARMACEUTICO",
         "OPERADOR DE CAIXA",
         "GERENTE",
+        "GERENTE FARMACEUTICO",
         "PROMOTOR DE VENDAS",
         "SUBGERENTE",
     }
