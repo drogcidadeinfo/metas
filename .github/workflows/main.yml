@@ -33,19 +33,8 @@ jobs:
           trier_password: ${{ secrets.TRIER_PASSWORD }}
         run: python scripts/info_downloads/raw_vendas_filial.py
 
-      
-      - name: Commit screenshot
-        if: always()   # 👈 THIS IS THE FIX
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git status
-          git add *.png
-          git commit -m "Add Selenium failure screenshot" || echo "No changes"
-          git push
-
-      #- name: Process and Upload to Google Sheets
-        #env:
-          #GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        #run: python scripts/file_processing/vendas_vendedor_proc.py
+      - name: Process and Upload to Google Sheets
+        env:
+          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/file_processing/vendas_vendedor_proc.py
