@@ -144,85 +144,65 @@ def build_calc_base(df_trier, df_sci):
     return calc_df
 
 # --------------------------------------------------
-# Step 2: Update Valor Realizado from VENDAS_VENDEDOR
+# Step 2: Copy Valor Vendas → Valor Realizado AS TEXT
 # --------------------------------------------------
 def update_valor_realizado_from_vendas(sheet, df_calc):
-    """
-    Copy Valor Vendas → Valor Realizado
-    Match strictly on Filial + Código
-    Keep values numeric (NO formatting here)
-    """
-
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
 
-    try:
-        df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
-    except Exception as e:
-        logging.warning(f"Could not read VENDAS_VENDEDOR worksheet: {e}")
-        return df_calc
+    df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
 
     if df_vendas.empty:
-        logging.warning("VENDAS_VENDEDOR worksheet is empty.")
+        logging.warning("VENDAS_VENDEDOR is empty.")
         return df_calc
 
-    # Normalize column names
+    # Clean column names
     df_vendas.columns = df_vendas.columns.str.strip()
 
     required_cols = ["Filial", "Código", "Valor Vendas"]
     for col in required_cols:
         if col not in df_vendas.columns:
-            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR.")
+            logging.warning(f"Column '{col}' not found.")
             return df_calc
 
-    # -------------------------
-    # Normalize keys ONLY
-    # -------------------------
-    df_vendas["Filial"] = (
+    # Normalize keys ONLY (as strings)
+    df_vendas["Filial_key"] = (
         df_vendas["Filial"]
         .astype(str)
         .str.upper()
         .str.replace("F", "", regex=False)
-        .astype(int)
+        .str.strip()
     )
 
-    df_vendas["Código"] = (
+    df_vendas["Código_key"] = (
         df_vendas["Código"]
         .astype(str)
         .str.replace(".0", "", regex=False)
-        .astype(int)
+        .str.strip()
     )
 
-    df_calc["Filial"] = df_calc["Filial"].astype(int)
-    df_calc["Código"] = df_calc["Código"].astype(int)
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
 
-    # -------------------------
-    # Ensure Valor Vendas is numeric
-    # -------------------------
-    df_vendas["Valor Vendas"] = pd.to_numeric(
-        df_vendas["Valor Vendas"],
-        errors="coerce"
-    ).fillna(0)
+    # IMPORTANT: force Valor Vendas to string (EXACT value)
+    df_vendas["Valor Vendas_str"] = df_vendas["Valor Vendas"].astype(str)
 
-    # -------------------------
-    # Merge and copy
-    # -------------------------
+    # Merge
     df_merged = df_calc.merge(
-        df_vendas[["Filial", "Código", "Valor Vendas"]],
-        on=["Filial", "Código"],
+        df_vendas[["Filial_key", "Código_key", "Valor Vendas_str"]],
+        on=["Filial_key", "Código_key"],
         how="left"
     )
 
-    df_merged["Valor Realizado"] = (
-        df_merged["Valor Vendas"]
-        .fillna(0)
-        .round(2)
+    # Copy EXACT text
+    mask = df_merged["Valor Vendas_str"].notna()
+    df_merged.loc[mask, "Valor Realizado"] = df_merged.loc[mask, "Valor Vendas_str"]
+
+    # Cleanup
+    df_merged = df_merged.drop(
+        columns=["Filial_key", "Código_key", "Valor Vendas_str"]
     )
 
-    df_merged = df_merged.drop(columns=["Valor Vendas"])
-
-    logging.info(
-        f"Valor Realizado updated for {(df_merged['Valor Realizado'] > 0).sum()} rows"
-    )
+    logging.info(f"Copied Valor Realizado for {mask.sum()} rows (TEXT mode).")
 
     return df_merged
 
