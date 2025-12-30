@@ -100,6 +100,26 @@ def float_to_br_text(value):
     int_str = f"{integer_part:,}".replace(",", ".")
     return f"{int_str},{decimal_part:02d}"
 
+import math
+
+def float_to_br_text_2(value):
+    if value is None or pd.isna(value):
+        return ""
+
+    try:
+        value = float(value)
+        value = round(value, 2)
+
+        integer_part = int(abs(value))
+        decimal_part = int(round((abs(value) - integer_part) * 100))
+
+        int_str = f"{integer_part:,}".replace(",", ".")
+        sign = "-" if value < 0 else ""
+
+        return f"{sign}{int_str},{decimal_part:02d}"
+    except Exception:
+        return ""
+
 def populate_valor_restante(df_calc):
     logging.info("Calculating Valor Restante (Meta - Valor Realizado)...")
 
@@ -217,18 +237,22 @@ def update_premiacao_from_comissoes(sheet, df_calc):
     )
 
     def calculate_premiacao(row):
-        meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
-        comissao = br_text_to_float(row["Valor Comissão_str"])
-
-        if meta is None or meta == 0 or comissao is None:
+        meta = br_text_to_float(row.get("Meta"))
+        realizado = br_text_to_float(row.get("Valor Realizado"))
+        comissao = br_text_to_float(row.get("Valor Comissão_str"))
+    
+        # Guard clauses
+        if meta is None or pd.isna(meta) or meta == 0:
             return ""
-
-        if realizado is None:
+    
+        if comissao is None or pd.isna(comissao):
+            return ""
+    
+        if realizado is None or pd.isna(realizado):
             realizado = 0.0
-
+    
         percentual = realizado / meta
-
+    
         if percentual < 0.80:
             premio = comissao * 0.5
         elif percentual < 1.05:
@@ -237,8 +261,11 @@ def update_premiacao_from_comissoes(sheet, df_calc):
             premio = comissao + 75
         else:
             premio = comissao + 150
-
-        return float_to_br_text(premio)
+    
+        if pd.isna(premio):
+            return ""
+    
+        return float_to_br_text_2(premio)
 
     df["Premiação"] = df.apply(calculate_premiacao, axis=1)
 
