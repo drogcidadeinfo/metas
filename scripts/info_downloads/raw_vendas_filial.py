@@ -62,10 +62,13 @@ try:
     time.sleep(10)
 
     driver.find_element(By.TAG_NAME, "body").send_keys(Keys.F11)
-    time.sleep(10)
+    time.sleep(5)
+
+    screenshot_path = "screenshot.png"
+    driver.save_screenshot(screenshot_path)
 
     # access "Compras Fornecedores"
-    # WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
+    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
     driver.find_element(By.ID, "sideMenuSearch").send_keys("Vendas Produtos")
     driver.find_element(By.ID, "sideMenuSearch").click()
     driver.implicitly_wait(2)
