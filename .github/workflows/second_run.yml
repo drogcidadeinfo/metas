@@ -26,6 +26,6 @@ jobs:
       - name: Run calc builder
         env:
           GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SHEET_ID }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: |
           python scripts/calc/data_calc.py
