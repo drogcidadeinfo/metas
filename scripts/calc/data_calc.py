@@ -263,54 +263,43 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         return None'''
 
     def parse_brazilian_number(value):
-        """Parse Brazilian number format from Google Sheets"""
+        """Parse Brazilian numbers from Google Sheets - always 2 decimal places"""
         if pd.isna(value) or value == "":
             return None
         
         try:
-            # Convert to float
-            num = float(value)
+            # Convert to string and remove any decimal point
+            str_val = str(value)
             
-            # Convert to string to analyze
-            str_num = f"{num:.10f}"
+            # Remove .0 if present
+            if str_val.endswith('.0'):
+                str_val = str_val[:-2]
             
-            # Remove trailing zeros and decimal point if no fractional part
-            if '.0' in str_num:
-                str_num = str_num.split('.0')[0]
+            # Now we have a string of digits like "142", "125848", "14", "1258480"
+            # The rule: Brazilian currency ALWAYS has 2 decimal places
+            # So we need to interpret the last 2 digits as cents
             
-            # The key insight: Google Sheets concatenates "integer" + "decimal"
-            # We need to figure out where to split
+            # If the string is too short (like "5"), pad with zeros
+            if len(str_val) == 1:
+                str_val = "0" + str_val  # "5" → "05"
             
-            # Try different split positions (1 or 2 digits for decimals)
-            for decimal_digits in [1, 2]:
-                if len(str_num) > decimal_digits:
-                    # Split into integer and decimal parts
-                    integer_part = str_num[:-decimal_digits]
-                    decimal_part = str_num[-decimal_digits:]
-                    
-                    # Reconstruct the number
-                    try:
-                        reconstructed = float(f"{integer_part}.{decimal_part}")
-                        
-                        # Check if this looks like a reasonable sales number
-                        if 0.01 <= reconstructed <= 1000000:
-                            # Success! Return with 2 decimal places
-                            return round(reconstructed, 2)
-                    except:
-                        continue
+            # Split into integer and decimal parts (always 2 decimal places)
+            if len(str_val) <= 2:
+                # Less than 1 real (like "50" means R$ 0,50)
+                integer_part = "0"
+                decimal_part = str_val.zfill(2)  # Ensure 2 digits
+            else:
+                # Normal case: last 2 digits are cents
+                integer_part = str_val[:-2]
+                decimal_part = str_val[-2:]
             
-            # If splitting didn't work, try simple division
-            # Most values with 2 decimal places need ÷100
-            if num > 100:
-                test_val = num / 100
-                if 0.01 <= test_val <= 1000000:
-                    return round(test_val, 2)
+            # Reconstruct as float
+            result = float(f"{integer_part}.{decimal_part}")
             
-            # Last resort: return as is
-            return round(num, 2)
+            return round(result, 2)
             
         except Exception as e:
-            logging.warning(f"Error parsing value '{value}': {e}")
+            logging.warning(f"Error parsing {value}: {e}")
             return None
     
     # FIXED: Simpler formatting function
