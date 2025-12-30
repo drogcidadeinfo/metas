@@ -88,7 +88,7 @@ def build_calc_base(df_trier, df_sci):
 
     # Extract Função from Cargo Atual
     df["Função_calc"] = (
-        df["Cargo Atual"]
+        df["Cargo atual"]
         .astype(str)
         .str.split("-", n=1)
         .str[1]
