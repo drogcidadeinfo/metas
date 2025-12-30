@@ -54,7 +54,9 @@ try:
     driver.get("http://drogcidade.ddns.net:4647/sgfpod1/Login.pod")
 
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "id_cod_usuario"))).send_keys(username)
+    time.sleep(5)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "nom_senha"))).send_keys(password)
+    time.sleep(5)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "login"))).click()
 
     # wait til page loads completely
