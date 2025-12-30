@@ -29,8 +29,8 @@ jobs:
 
       - name: Run Selenium Scraper
         env:
-          sci_user: ${{ secrets.SCI_USER }}
-          sci_password: ${{ secrets.SCI_PASSWORD }}
+          trier_user: ${{ secrets.SCI_USER }}
+          trier_password: ${{ secrets.SCI_PASSWORD }}
         run: python scripts/info_downloads/raw_vendas_filial.py
 
       #- name: Process and Upload to Google Sheets
