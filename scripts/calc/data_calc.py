@@ -263,75 +263,37 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         return None'''
 
     def parse_brazilian_number(value):
-        """Parse Brazilian number format, ensuring 2 decimal places"""
+        """Always return value with 2 decimal places"""
         if pd.isna(value) or value == "":
             return None
         
-        # If it's already a number from Google Sheets
-        if isinstance(value, (int, float)):
-            # Google Sheets converts "40848,8" to 408488.0 (multiplied by 10)
-            # We need to divide by 10, then ensure 2 decimal places
-            str_val = str(value)
-            
-            # Check if it looks like a multiplied value
-            # Values like 408488.0 (from 40848,8) or 597656.0 (from 5976,56)
-            if '.' in str_val:
-                parts = str_val.split('.')
-                if len(parts) == 2:
-                    integer_part = parts[0]
-                    decimal_part = parts[1]
-                    
-                    # If it ends with .0 and the last 2 digits of integer part are not "00"
-                    # it might need dividing
-                    if decimal_part == '0' and len(integer_part) >= 2:
-                        last_two_digits = integer_part[-2:]
-                        if last_two_digits != '00':
-                            # This might be a value like 408488.0 (from 40848,8)
-                            # Try dividing by 10 first
-                            divided_by_10 = value / 10
-                            # Then check if dividing by 100 makes more sense
-                            divided_by_100 = value / 100
-                            
-                            # Check which one gives a more reasonable value
-                            if 1 <= divided_by_10 <= 1000000:
-                                return round(divided_by_10, 2)
-                            elif 1 <= divided_by_100 <= 1000000:
-                                return round(divided_by_100, 2)
-            
-            # If no special handling needed, just round to 2 decimals
-            return round(float(value), 2)
-        
-        # If it's a string (shouldn't happen with Google Sheets but just in case)
-        val_str = str(value).strip()
-        val_str = val_str.replace('R$', '').replace('$', '').strip()
-        
-        if not val_str:
-            return None
-        
-        # Handle comma as decimal separator (like "40848,8" or "5976,56")
-        if ',' in val_str:
-            parts = val_str.split(',')
-            integer_part = parts[0].replace('.', '')  # Remove thousands separators
-            decimal_part = parts[1] if len(parts) > 1 else ""
-            
-            # Ensure decimal part has exactly 2 digits
-            if len(decimal_part) == 0:
-                decimal_part = '00'
-            elif len(decimal_part) == 1:
-                decimal_part += '0'  # "8" becomes "80"
-            elif len(decimal_part) > 2:
-                decimal_part = decimal_part[:2]  # Truncate if more than 2 digits
-            
-            try:
-                return float(f"{integer_part}.{decimal_part}")
-            except:
-                return None
-        
-        # No comma, try regular float conversion
         try:
-            # Remove any dots (thousands separators) and convert
-            cleaned = val_str.replace('.', '').replace(',', '.')
-            return round(float(cleaned), 2)
+            # Convert to float
+            num = float(value)
+            
+            # The REAL issue: Google Sheets gives us 408488.0 for "40848,8"
+            # This is because it removes the comma: "40848" + "8" = "408488"
+            # So 408488 ÷ 10 = 40848.8
+            
+            # Check if the number looks like it has "extra" digits
+            str_num = f"{num:.10f}".rstrip('0').rstrip('.')
+            
+            # If number is very large with few trailing zeros, try dividing
+            if num > 10000 and not str_num.endswith('00'):
+                # Try dividing by powers of 10
+                for i in range(1, 4):  # 10, 100, 1000
+                    divisor = 10 ** i
+                    test = num / divisor
+                    
+                    # If test looks like a reasonable sales number
+                    if 1 <= test <= 100000:
+                        # And has reasonable decimal part
+                        decimal_part = test - int(test)
+                        if decimal_part < 0.99:  # Not .999...
+                            return round(test, 2)
+            
+            # Otherwise return rounded to 2 decimals
+            return round(num, 2)
         except:
             return None
     
