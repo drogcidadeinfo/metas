@@ -146,8 +146,8 @@ def build_calc_base(df_trier, df_sci):
 # --------------------------------------------------
 # Step 2: Update Valor Realizado from VENDAS_VENDEDOR
 # --------------------------------------------------
-def update_valor_realizado_from_vendas_simple(sheet, df_calc):
-    """Update Valor Realizado in calc from VENDAS_VENDEDOR - pandas merge version."""
+def update_valor_realizado_from_vendas(sheet, df_calc):
+    """Update Valor Realizado in calc from VENDAS_VENDEDOR using Filial + Código match."""
     
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
     
@@ -171,7 +171,7 @@ def update_valor_realizado_from_vendas_simple(sheet, df_calc):
             logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR worksheet.")
             return df_calc
     
-    # Normalize Filial in both dataframes for matching
+    # Create a copy for normalization
     df_vendas_norm = df_vendas.copy()
     
     # Normalize Filial: F01 → 1
@@ -191,54 +191,114 @@ def update_valor_realizado_from_vendas_simple(sheet, df_calc):
         .astype(int, errors='ignore')
     )
     
-    # Helper function to format as Brazilian currency
-    def format_brazilian(value):
+    # CORRECTED: Function to parse Brazilian number format correctly
+    def parse_brazilian_number(value):
+        """Parse Brazilian number format (1.234,56) to float"""
         if pd.isna(value) or value == "":
-            return ""
+            return None
         
-        # If already has R$, clean and reformat
         val_str = str(value).strip()
+        
+        # Remove any R$ or currency symbols
         val_str = val_str.replace('R$', '').replace('$', '').strip()
         
-        # Remove all non-numeric except . and ,
-        val_str = ''.join(c for c in val_str if c.isdigit() or c in ',.')
+        # Remove any spaces
+        val_str = val_str.replace(' ', '')
         
-        # Try to parse as float
+        # If empty after cleaning
+        if not val_str:
+            return None
+        
+        # Handle different formats
+        if ',' in val_str and '.' in val_str:
+            # Brazilian format: 1.234,56
+            # Remove dots (thousands separators), replace comma with dot
+            integer_part = val_str.split(',')[0].replace('.', '')
+            decimal_part = val_str.split(',')[1]
+            
+            # Ensure decimal has at most 2 digits
+            if len(decimal_part) > 2:
+                decimal_part = decimal_part[:2]
+            
+            try:
+                return float(f"{integer_part}.{decimal_part}")
+            except:
+                return None
+        
+        elif ',' in val_str and '.' not in val_str:
+            # European format: 1234,56 or 1,56
+            parts = val_str.split(',')
+            integer_part = parts[0]
+            decimal_part = parts[1] if len(parts) > 1 else "00"
+            
+            # Ensure decimal has at most 2 digits
+            if len(decimal_part) > 2:
+                decimal_part = decimal_part[:2]
+            
+            try:
+                return float(f"{integer_part}.{decimal_part}")
+            except:
+                return None
+        
+        elif '.' in val_str and ',' not in val_str:
+            # Could be US format (1,234.56) or just number with decimal
+            # Remove any commas (US thousands separators)
+            val_str = val_str.replace(',', '')
+            
+            try:
+                return float(val_str)
+            except:
+                return None
+        
+        else:
+            # Just digits
+            try:
+                return float(val_str)
+            except:
+                return None
+    
+    # CORRECTED: Function to format as Brazilian currency
+    def format_brazilian_currency(value):
+        """Format float as Brazilian currency: R$ 1.234,56"""
+        if value is None or pd.isna(value):
+            return ""
+        
         try:
-            # Replace comma with dot for float conversion if comma is decimal
-            if ',' in val_str and '.' not in val_str:
-                # Check if comma is decimal (has 1-2 digits after)
-                parts = val_str.split(',')
-                if len(parts) == 2 and len(parts[1]) <= 2:
-                    val_str = val_str.replace(',', '.')
+            # Convert to float if it's not already
+            if not isinstance(value, (int, float)):
+                # Try to parse it first
+                parsed = parse_brazilian_number(value)
+                if parsed is None:
+                    return ""
+                value = parsed
             
-            # Convert to float
-            num = float(val_str.replace(',', '').replace('.', ''))
+            # Round to 2 decimal places
+            value = round(float(value), 2)
             
-            # If value was like "1.234,56", we need to divide by 100 if it had 2 decimal places
-            if ',' in str(value) and str(value).split(',')[-1].isdigit():
-                if len(str(value).split(',')[-1]) == 2:
-                    num = num / 100
+            # Split into integer and decimal parts
+            integer_part = int(value)
+            decimal_part = int(round((value - integer_part) * 100))
             
-            # Format as Brazilian: 1234.56 → R$ 1.234,56
-            # Get integer and decimal parts
-            integer_part = int(num)
-            decimal_part = round((num - integer_part) * 100)
-            
-            # Format integer part with dots
+            # Format integer part with dots as thousands separators
             int_str = f"{integer_part:,}".replace(",", ".")
             
             return f"R$ {int_str},{decimal_part:02d}"
-        except:
-            # If conversion fails, try to preserve original with R$
-            if val_str:
-                return f"R$ {val_str}"
+        except Exception as e:
+            logging.warning(f"Error formatting value {value}: {e}")
             return ""
     
-    # Apply formatting to Valor Vendas
-    df_vendas_norm["Valor Vendas_formatted"] = df_vendas_norm["Valor Vendas"].apply(format_brazilian)
+    # Parse the Valor Vendas to float first
+    df_vendas_norm["Valor Vendas_float"] = df_vendas_norm["Valor Vendas"].apply(parse_brazilian_number)
     
-    # Merge
+    # Debug: log some parsed values to check
+    logging.info(f"Sample parsed values from VENDAS_VENDEDOR:")
+    for i, row in df_vendas_norm.head(5).iterrows():
+        logging.info(f"  Original: {row['Valor Vendas']} -> Parsed: {row['Valor Vendas_float']}")
+    
+    # Format to Brazilian currency
+    df_vendas_norm["Valor Vendas_formatted"] = df_vendas_norm["Valor Vendas_float"].apply(format_brazilian_currency)
+    
+    # Merge with df_calc
     df_merged = df_calc.merge(
         df_vendas_norm[["Filial_norm", "Código_norm", "Valor Vendas_formatted"]],
         left_on=["Filial", "Código"],
@@ -247,14 +307,22 @@ def update_valor_realizado_from_vendas_simple(sheet, df_calc):
     )
     
     # Update Valor Realizado where we have matches
-    df_merged["Valor Realizado"] = df_merged["Valor Vendas_formatted"].combine_first(df_merged["Valor Realizado"])
+    mask = df_merged["Valor Vendas_formatted"].notna() & (df_merged["Valor Vendas_formatted"] != "")
+    df_merged.loc[mask, "Valor Realizado"] = df_merged.loc[mask, "Valor Vendas_formatted"]
     
     # Drop temporary columns
     df_merged = df_merged.drop(columns=["Filial_norm", "Código_norm", "Valor Vendas_formatted"])
     
-    # Log results
-    updated_count = df_merged["Valor Realizado"].notna().sum() - (df_calc["Valor Realizado"] != "").sum()
+    # Count updates
+    updated_count = mask.sum()
     logging.info(f"Updated Valor Realizado for {updated_count} records")
+    
+    # Debug: show some results
+    if updated_count > 0:
+        logging.info("Sample of updated values:")
+        sample_rows = df_merged[mask].head(3)
+        for i, row in sample_rows.iterrows():
+            logging.info(f"  Filial: {row['Filial']}, Código: {row['Código']}, Valor Realizado: {row['Valor Realizado']}")
     
     return df_merged
     
@@ -305,7 +373,7 @@ def main():
         return
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
-    df_calc = update_valor_realizado_from_vendas_simple(sheet, df_calc)
+    df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
