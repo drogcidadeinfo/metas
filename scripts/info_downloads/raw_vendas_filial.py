@@ -64,8 +64,7 @@ try:
     driver.find_element(By.TAG_NAME, "body").send_keys(Keys.F11)
     time.sleep(5)
 
-    filename = datetime.now().strftime("screenshot_%Y%m%d_%H%M%S.png")
-    driver.save_screenshot(filename)
+    driver.save_screenshot("screenshot.png")
 
     # access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
