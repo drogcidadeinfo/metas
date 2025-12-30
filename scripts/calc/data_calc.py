@@ -118,6 +118,27 @@ def build_calc_base(df_trier, df_sci):
         "Premiação": ""
     })
 
+    # Filter by allowed Funções
+    ALLOWED_FUNCOES = {
+        "FARMACEUTICO",
+        "OPERADOR DE CAIXA",
+        "GERENTE",
+        "PROMOTOR DE VENDAS",
+        "SUBGERENTE",
+    }
+    
+    calc_df["Função"] = (
+        calc_df["Função"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    
+    calc_df = calc_df[calc_df["Função"].isin(ALLOWED_FUNCOES)]
+    
+    # Sort by Filial (A–Z)
+    calc_df = calc_df.sort_values(by="Filial").reset_index(drop=True)
+
     logging.info(f"Calc rows generated: {len(calc_df)}")
     return calc_df
 
