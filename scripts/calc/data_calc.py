@@ -61,6 +61,20 @@ def read_worksheet_as_df(sheet, worksheet_name):
 
     return pd.DataFrame(rows, columns=headers)
 
+def populate_meta_for_testing(df_calc):
+    logging.info("Populating Meta column (TEST MODE)...")
+
+    META_BY_CODIGO = {
+        342: "39351,85",
+        349: "27777,78",
+        225: "39351,85",
+    }
+
+    df_calc["Meta"] = df_calc["Código"].map(META_BY_CODIGO).fillna("")
+
+    logging.info("Meta column populated for testing.")
+    return df_calc
+
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
 # --------------------------------------------------
@@ -263,6 +277,7 @@ def main():
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
+    df_calc = populate_meta_for_testing(df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
