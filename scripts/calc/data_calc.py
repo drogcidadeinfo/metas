@@ -47,10 +47,19 @@ def get_gspread_client():
 # --------------------------------------------------
 # Read worksheet → DataFrame
 # --------------------------------------------------
+'''def read_worksheet_as_df(sheet, worksheet_name):
+    logging.info(f"Reading worksheet: {worksheet_name}")
+    ws = sheet.worksheet(worksheet_name)
+    return pd.DataFrame(ws.get_all_records())'''
 def read_worksheet_as_df(sheet, worksheet_name):
     logging.info(f"Reading worksheet: {worksheet_name}")
     ws = sheet.worksheet(worksheet_name)
-    return pd.DataFrame(ws.get_all_records())
+
+    values = ws.get_all_values()  # ← keeps commas EXACTLY
+    headers = values[0]
+    rows = values[1:]
+
+    return pd.DataFrame(rows, columns=headers)
 
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
@@ -205,195 +214,6 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
     logging.info(f"Copied Valor Realizado for {mask.sum()} rows (TEXT mode).")
 
     return df_merged
-
-'''# --------------------------------------------------
-# Step 2: Update Valor Realizado from VENDAS_VENDEDOR
-# --------------------------------------------------
-def update_valor_realizado_from_vendas(sheet, df_calc):
-    """Update Valor Realizado in calc from VENDAS_VENDEDOR using Filial + Código match."""
-    
-    logging.info("Reading VENDAS_VENDEDOR worksheet...")
-    
-    try:
-        df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
-    except Exception as e:
-        logging.warning(f"Could not read VENDAS_VENDEDOR worksheet: {e}")
-        return df_calc
-    
-    if df_vendas.empty:
-        logging.warning("VENDAS_VENDEDOR worksheet is empty.")
-        return df_calc
-    
-    # Clean column names
-    df_vendas.columns = df_vendas.columns.str.strip()
-    
-    # Check required columns
-    required_cols = ["Filial", "Código", "Valor Vendas"]
-    for col in required_cols:
-        if col not in df_vendas.columns:
-            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR worksheet.")
-            return df_calc
-    
-    # Create a copy for normalization
-    df_vendas_norm = df_vendas.copy()
-    
-    # Normalize Filial: F01 → 1
-    df_vendas_norm["Filial_norm"] = (
-        df_vendas_norm["Filial"]
-        .astype(str)
-        .str.upper()
-        .str.replace("F", "", regex=False)
-        .astype(int, errors='ignore')
-    )
-    
-    # Normalize Código: remove .0
-    df_vendas_norm["Código_norm"] = (
-        df_vendas_norm["Código"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .astype(int, errors='ignore')
-    )
-
-    def parse_brazilian_number(value):
-        """
-        Parse Brazilian-formatted numbers correctly.
-    
-        Rules:
-        - No comma → .00
-        - One decimal digit → pad with zero
-        - Two decimal digits → keep
-        - Dot is thousands separator
-        """
-        if pd.isna(value) or value == "":
-            return None
-    
-        try:
-            s = str(value).strip()
-    
-            # Remove thousands separators
-            s = s.replace(".", "")
-    
-            # Handle decimal comma
-            if "," in s:
-                integer_part, decimal_part = s.split(",", 1)
-    
-                if len(decimal_part) == 0:
-                    decimal_part = "00"
-                elif len(decimal_part) == 1:
-                    decimal_part = decimal_part + "0"
-                else:
-                    decimal_part = decimal_part[:2]
-    
-            else:
-                integer_part = s
-                decimal_part = "00"
-    
-            normalized = f"{integer_part}.{decimal_part}"
-            return round(float(normalized), 2)
-    
-        except Exception:
-            return None
-    
-    # FIXED: Simpler formatting function
-    def format_brazilian_currency(value):
-        """Format float as Brazilian currency: R$ 1.234,56"""
-        if value is None or pd.isna(value):
-            return ""
-        
-        try:
-            # Convert to float if needed
-            if not isinstance(value, (int, float)):
-                parsed = parse_brazilian_number(value)
-                if parsed is None:
-                    return ""
-                value = parsed
-            else:
-                # If it's already a number, use it directly
-                value = float(value)
-            
-            # Now format it
-            # First, ensure we have the right value (not multiplied)
-            # If value seems too large (like 597656 for what should be 5976.56)
-            # divide by 100
-            if value > 100000:  # If value is over 100,000, it might be multiplied
-                # Check if dividing by 100 gives a more reasonable number
-                test_value = value / 100
-                if 1 <= test_value <= 1000000:  # Reasonable range for sales
-                    value = test_value
-            
-            # Round to 2 decimal places
-            value = round(float(value), 2)
-            
-            # Format as Brazilian currency
-            integer_part = int(value)
-            decimal_part = int(round((value - integer_part) * 100))
-            
-            # Format integer part with dots as thousands separators
-            int_str = f"{integer_part:,}".replace(",", ".")
-            
-            return f"R$ {int_str},{decimal_part:02d}"
-        except Exception as e:
-            logging.warning(f"Error formatting value {value}: {e}")
-            return ""
-    
-    # Parse the Valor Vendas to float first
-    df_vendas_norm["Valor Vendas_float"] = df_vendas_norm["Valor Vendas"].apply(parse_brazilian_number)
-    
-    # Debug: log some parsed values to check
-    logging.info(f"Sample parsed values from VENDAS_VENDEDOR:")
-    for i, row in df_vendas_norm.head(5).iterrows():
-        original_val = row['Valor Vendas']
-        parsed_val = row['Valor Vendas_float']
-        # Also show what it would be divided by 100
-        if isinstance(original_val, (int, float)) and original_val > 1000:
-            divided = original_val / 100
-            logging.info(f"  Original: {original_val} -> Parsed: {parsed_val} (divided by 100: {divided})")
-        else:
-            logging.info(f"  Original: {original_val} -> Parsed: {parsed_val}")
-    
-    # Format to Brazilian currency
-    df_vendas_norm["Valor Vendas_formatted"] = df_vendas_norm["Valor Vendas_float"].apply(format_brazilian_currency)
-    
-    # Merge with df_calc
-    df_merged = df_calc.merge(
-        df_vendas_norm[["Filial_norm", "Código_norm", "Valor Vendas_formatted"]],
-        left_on=["Filial", "Código"],
-        right_on=["Filial_norm", "Código_norm"],
-        how="left"
-    )
-    
-    # Create mask for matches (FIXED: define mask before using it)
-    mask = df_merged["Valor Vendas_formatted"].notna() & (df_merged["Valor Vendas_formatted"] != "")
-    
-    # Update Valor Realizado where we have matches
-    df_merged.loc[mask, "Valor Realizado"] = df_merged.loc[mask, "Valor Vendas_formatted"]
-    
-    # Drop temporary columns
-    df_merged = df_merged.drop(columns=["Filial_norm", "Código_norm", "Valor Vendas_formatted"])
-    
-    # Count updates
-    updated_count = mask.sum()
-    logging.info(f"Updated Valor Realizado for {updated_count} records")
-    
-    # Debug: show some results
-    if updated_count > 0:
-        logging.info("Sample of updated values:")
-        sample_rows = df_merged[mask].head(5)
-        for i, row in sample_rows.iterrows():
-            logging.info(f"  Filial: {row['Filial']}, Código: {row['Código']}, Valor Realizado: '{row['Valor Realizado']}'")
-    
-    # If no matches found, log details for debugging
-    if updated_count == 0 and len(df_calc) > 0:
-        logging.warning("No matches found between calc and VENDAS_VENDEDOR")
-        # Log first few Filial/Código pairs for debugging
-        sample_pairs = df_calc[["Filial", "Código"]].head(5).to_dict('records')
-        logging.warning(f"Sample calc pairs: {sample_pairs}")
-        
-        # Also show sample from VENDAS_VENDEDOR
-        sample_vendas = df_vendas[["Filial", "Código"]].head(5).to_dict('records')
-        logging.warning(f"Sample VENDAS_VENDEDOR pairs: {sample_vendas}")
-    
-    return df_merged'''
     
 # --------------------------------------------------
 # Write to calc worksheet
