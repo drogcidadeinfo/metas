@@ -31,7 +31,7 @@ jobs:
         env:
           trier_user: ${{ secrets.SCI_USER }}
           trier_password: ${{ secrets.SCI_PASSWORD }}
-        run: python scripts/info_downloads/raw_vendas_filial.py
+        run: python scripts/info_downloads/raw_users_trier.py
 
       #- name: Process and Upload to Google Sheets
         #env:
