@@ -64,7 +64,21 @@ try:
     driver.find_element(By.TAG_NAME, "body").send_keys(Keys.F11)
     time.sleep(5)
 
-    driver.save_screenshot("screenshot.png")
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.ID, "sideMenuSearch"))
+        )
+    
+    except TimeoutException as e:
+        logging.error("Element 'sideMenuSearch' not found — taking screenshot")
+    
+        # ✅ Saved in repo root (same place as README.md)
+        driver.save_screenshot("timeout_sideMenuSearch.png")
+    
+        raise  # IMPORTANT: keeps GitHub Actions red ❌
+    
+    finally:
+        driver.quit()
 
     # access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
