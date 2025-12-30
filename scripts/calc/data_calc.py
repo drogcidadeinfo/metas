@@ -191,12 +191,39 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         .astype(int, errors='ignore')
     )
     
-    # CORRECTED: Function to parse Brazilian number format correctly
+    # FIXED: Handle numbers that are already multiplied by 100
     def parse_brazilian_number(value):
-        """Parse Brazilian number format (1.234,56) to float"""
+        """Parse Brazilian number format, handling Google Sheets auto-conversion"""
         if pd.isna(value) or value == "":
             return None
         
+        # Check if value is already a number (float or int)
+        if isinstance(value, (int, float)):
+            # Google Sheets might have already converted "5976,56" to 597656.0
+            # We need to check if this looks like it was originally "xxxx,xx"
+            # by checking if it's unusually large (ends with many zeros)
+            str_val = str(value)
+            
+            # If it ends with .0 and has at least 4 digits before decimal,
+            # it might be a multiplied value
+            if str_val.endswith('.0'):
+                num_part = str_val[:-2]
+                if len(num_part) >= 4 and num_part[-2:] == '00':
+                    # Could be like "597656.0" (original "5976,56")
+                    # Try dividing by 100
+                    try:
+                        divided = value / 100
+                        # Check if the divided value looks more reasonable
+                        # (not too small, not too large)
+                        if 1 <= divided <= 1000000:  # Reasonable sales range
+                            return divided
+                    except:
+                        pass
+            
+            # Otherwise, return the value as is (it might already be correct)
+            return float(value)
+        
+        # If it's a string, try parsing
         val_str = str(value).strip()
         
         # Remove any R$ or currency symbols
@@ -209,73 +236,63 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         if not val_str:
             return None
         
-        # Handle different formats
-        if ',' in val_str and '.' in val_str:
-            # Brazilian format: 1.234,56
-            # Remove dots (thousands separators), replace comma with dot
-            integer_part = val_str.split(',')[0].replace('.', '')
-            decimal_part = val_str.split(',')[1]
-            
-            # Ensure decimal has at most 2 digits
-            if len(decimal_part) > 2:
-                decimal_part = decimal_part[:2]
-            
-            try:
+        # Try different parsing strategies
+        try:
+            # Strategy 1: Direct float conversion (for numbers like "597656.0")
+            return float(val_str) / 100  # Divide by 100 since Google multiplied it
+        except:
+            # Strategy 2: Brazilian format parsing
+            if ',' in val_str and '.' in val_str:
+                # Brazilian format: 1.234,56
+                integer_part = val_str.split(',')[0].replace('.', '')
+                decimal_part = val_str.split(',')[1]
+                if len(decimal_part) > 2:
+                    decimal_part = decimal_part[:2]
                 return float(f"{integer_part}.{decimal_part}")
-            except:
-                return None
-        
-        elif ',' in val_str and '.' not in val_str:
-            # European format: 1234,56 or 1,56
-            parts = val_str.split(',')
-            integer_part = parts[0]
-            decimal_part = parts[1] if len(parts) > 1 else "00"
-            
-            # Ensure decimal has at most 2 digits
-            if len(decimal_part) > 2:
-                decimal_part = decimal_part[:2]
-            
-            try:
+            elif ',' in val_str and '.' not in val_str:
+                # European format: 1234,56
+                parts = val_str.split(',')
+                integer_part = parts[0]
+                decimal_part = parts[1] if len(parts) > 1 else "00"
+                if len(decimal_part) > 2:
+                    decimal_part = decimal_part[:2]
                 return float(f"{integer_part}.{decimal_part}")
-            except:
-                return None
-        
-        elif '.' in val_str and ',' not in val_str:
-            # Could be US format (1,234.56) or just number with decimal
-            # Remove any commas (US thousands separators)
-            val_str = val_str.replace(',', '')
-            
-            try:
-                return float(val_str)
-            except:
-                return None
-        
-        else:
-            # Just digits
-            try:
-                return float(val_str)
-            except:
-                return None
+            else:
+                # Just try to convert
+                return float(val_str.replace(',', '.')) / 100  # Divide by 100
+        return None
     
-    # CORRECTED: Function to format as Brazilian currency
+    # FIXED: Simpler formatting function
     def format_brazilian_currency(value):
         """Format float as Brazilian currency: R$ 1.234,56"""
         if value is None or pd.isna(value):
             return ""
         
         try:
-            # Convert to float if it's not already
+            # Convert to float if needed
             if not isinstance(value, (int, float)):
-                # Try to parse it first
                 parsed = parse_brazilian_number(value)
                 if parsed is None:
                     return ""
                 value = parsed
+            else:
+                # If it's already a number, use it directly
+                value = float(value)
+            
+            # Now format it
+            # First, ensure we have the right value (not multiplied)
+            # If value seems too large (like 597656 for what should be 5976.56)
+            # divide by 100
+            if value > 100000:  # If value is over 100,000, it might be multiplied
+                # Check if dividing by 100 gives a more reasonable number
+                test_value = value / 100
+                if 1 <= test_value <= 1000000:  # Reasonable range for sales
+                    value = test_value
             
             # Round to 2 decimal places
             value = round(float(value), 2)
             
-            # Split into integer and decimal parts
+            # Format as Brazilian currency
             integer_part = int(value)
             decimal_part = int(round((value - integer_part) * 100))
             
@@ -293,7 +310,14 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
     # Debug: log some parsed values to check
     logging.info(f"Sample parsed values from VENDAS_VENDEDOR:")
     for i, row in df_vendas_norm.head(5).iterrows():
-        logging.info(f"  Original: {row['Valor Vendas']} -> Parsed: {row['Valor Vendas_float']}")
+        original_val = row['Valor Vendas']
+        parsed_val = row['Valor Vendas_float']
+        # Also show what it would be divided by 100
+        if isinstance(original_val, (int, float)) and original_val > 1000:
+            divided = original_val / 100
+            logging.info(f"  Original: {original_val} -> Parsed: {parsed_val} (divided by 100: {divided})")
+        else:
+            logging.info(f"  Original: {original_val} -> Parsed: {parsed_val}")
     
     # Format to Brazilian currency
     df_vendas_norm["Valor Vendas_formatted"] = df_vendas_norm["Valor Vendas_float"].apply(format_brazilian_currency)
@@ -305,18 +329,11 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         right_on=["Filial_norm", "Código_norm"],
         how="left"
     )
-
-    # Add this after the merge to see what's being matched
-    logging.info("\nDebugging merge results (first 5 matches):")
-    for i, row in df_merged[mask].head(5).iterrows():
-        logging.info(f"Row {i}:")
-        logging.info(f"  Filial: {row['Filial']}, Código: {row['Código']}")
-        logging.info(f"  Original Valor Vendas: {df_vendas_norm.loc[df_vendas_norm['Filial_norm'] == row['Filial']].loc[df_vendas_norm['Código_norm'] == row['Código'], 'Valor Vendas'].iloc[0]}")
-        logging.info(f"  Parsed float: {df_vendas_norm.loc[df_vendas_norm['Filial_norm'] == row['Filial']].loc[df_vendas_norm['Código_norm'] == row['Código'], 'Valor Vendas_float'].iloc[0]}")
-        logging.info(f"  Formatted: {row['Valor Realizado']}")
+    
+    # Create mask for matches (FIXED: define mask before using it)
+    mask = df_merged["Valor Vendas_formatted"].notna() & (df_merged["Valor Vendas_formatted"] != "")
     
     # Update Valor Realizado where we have matches
-    mask = df_merged["Valor Vendas_formatted"].notna() & (df_merged["Valor Vendas_formatted"] != "")
     df_merged.loc[mask, "Valor Realizado"] = df_merged.loc[mask, "Valor Vendas_formatted"]
     
     # Drop temporary columns
@@ -329,9 +346,20 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
     # Debug: show some results
     if updated_count > 0:
         logging.info("Sample of updated values:")
-        sample_rows = df_merged[mask].head(3)
+        sample_rows = df_merged[mask].head(5)
         for i, row in sample_rows.iterrows():
-            logging.info(f"  Filial: {row['Filial']}, Código: {row['Código']}, Valor Realizado: {row['Valor Realizado']}")
+            logging.info(f"  Filial: {row['Filial']}, Código: {row['Código']}, Valor Realizado: '{row['Valor Realizado']}'")
+    
+    # If no matches found, log details for debugging
+    if updated_count == 0 and len(df_calc) > 0:
+        logging.warning("No matches found between calc and VENDAS_VENDEDOR")
+        # Log first few Filial/Código pairs for debugging
+        sample_pairs = df_calc[["Filial", "Código"]].head(5).to_dict('records')
+        logging.warning(f"Sample calc pairs: {sample_pairs}")
+        
+        # Also show sample from VENDAS_VENDEDOR
+        sample_vendas = df_vendas[["Filial", "Código"]].head(5).to_dict('records')
+        logging.warning(f"Sample VENDAS_VENDEDOR pairs: {sample_vendas}")
     
     return df_merged
     
