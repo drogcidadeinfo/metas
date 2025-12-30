@@ -305,6 +305,15 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         right_on=["Filial_norm", "Código_norm"],
         how="left"
     )
+
+    # Add this after the merge to see what's being matched
+    logging.info("\nDebugging merge results (first 5 matches):")
+    for i, row in df_merged[mask].head(5).iterrows():
+        logging.info(f"Row {i}:")
+        logging.info(f"  Filial: {row['Filial']}, Código: {row['Código']}")
+        logging.info(f"  Original Valor Vendas: {df_vendas_norm.loc[df_vendas_norm['Filial_norm'] == row['Filial']].loc[df_vendas_norm['Código_norm'] == row['Código'], 'Valor Vendas'].iloc[0]}")
+        logging.info(f"  Parsed float: {df_vendas_norm.loc[df_vendas_norm['Filial_norm'] == row['Filial']].loc[df_vendas_norm['Código_norm'] == row['Código'], 'Valor Vendas_float'].iloc[0]}")
+        logging.info(f"  Formatted: {row['Valor Realizado']}")
     
     # Update Valor Realizado where we have matches
     mask = df_merged["Valor Vendas_formatted"].notna() & (df_merged["Valor Vendas_formatted"] != "")
@@ -377,34 +386,5 @@ def main():
 
     update_calc_sheet(sheet, df_calc)
 
-#if __name__ == "__main__":
-    #main()
-# Test the parsing function
 if __name__ == "__main__":
-    # Test cases
-    test_values = [
-        "5976,56",
-        "25574,86", 
-        "270,52",
-        "40848,8",
-        "24604,05",
-        "36691,04",
-        "R$ 5.976,56",
-        "1.234,56",
-        "1234,56",
-        "1234.56",
-        "1,234.56"
-    ]
-    
-    # Test the parse_brazilian_number function
-    print("Testing parse_brazilian_number():")
-    for val in test_values:
-        result = parse_brazilian_number(val)
-        print(f"  '{val}' -> {result}")
-    
-    # Test the format_brazilian_currency function  
-    print("\nTesting format_brazilian_currency():")
-    test_numbers = [5976.56, 25574.86, 270.52, 40848.8, 24604.05, 36691.04]
-    for num in test_numbers:
-        result = format_brazilian_currency(num)
-        print(f"  {num} -> {result}")
+    main()
