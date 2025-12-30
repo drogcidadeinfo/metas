@@ -33,6 +33,14 @@ jobs:
           trier_password: ${{ secrets.SCI_PASSWORD }}
         run: python scripts/info_downloads/raw_users_trier.py
 
+      - name: Commit screenshot
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add screenshot.png
+          git commit -m "Add Selenium screenshot" || echo "No changes"
+          git push
+
       #- name: Process and Upload to Google Sheets
         #env:
           #GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
