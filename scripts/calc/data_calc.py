@@ -72,32 +72,41 @@ def build_calc_base(df_trier, df_sci):
     )
 
     if df.empty:
-        logging.warning("No matching users found between users_trier and users_sci.")
+        logging.warning("No matching users found.")
         return pd.DataFrame()
 
-    df["Filial_num"] = (
+    # Filial: F01 → 1
+    df["Filial_calc"] = (
         df["Filial"]
+        .astype(str)
         .str.replace("F", "", regex=False)
         .astype(int)
     )
 
+    # Código: remove .0 safely
+    df["Código"] = (
+        df["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .astype(int)
+    )
+
+    # ID: Filial + Código
     df["ID"] = (
-        df["Filial_num"].astype(str) +
+        df["Filial_calc"].astype(str) +
         df["Código"].astype(str)
     )
 
-    # Extract Função from Cargo Atual
+    # Função: from Cargo Atual
     df["Função_calc"] = (
         df["Cargo atual"]
         .astype(str)
-        .str.split("-", n=1)
-        .str[1]
-        .str.strip()
+        .apply(lambda x: x.split("-", 1)[1].strip() if "-" in x else x)
     )
 
     calc_df = pd.DataFrame({
         "ID": df["ID"],
-        "Filial": df["Filial_num"].astype(str).str.zfill(2),
+        "Filial": df["Filial_calc"],
         "Código": df["Código"],
         "Colaborador": df["Funcionário"],
         "Meta": "",
