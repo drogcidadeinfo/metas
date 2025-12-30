@@ -90,6 +90,7 @@ try:
     time.sleep(5)
 
     try:
+        # Take screenshot
         screenshot_path = take_screenshot(driver, "test_screenshot.png")
         
         # For debugging in GitHub Actions, you might want to check if file exists
@@ -97,6 +98,9 @@ try:
             print(f"✓ Screenshot successfully saved: {os.path.basename(screenshot_path)}")
         else:
             print("✗ Failed to save screenshot")
+            
+    finally:
+        pass
 
     # access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
