@@ -263,7 +263,7 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         return None'''
 
     def parse_brazilian_number(value):
-        """Always return value with 2 decimal places"""
+        """Parse Brazilian number format from Google Sheets"""
         if pd.isna(value) or value == "":
             return None
         
@@ -271,30 +271,46 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
             # Convert to float
             num = float(value)
             
-            # The REAL issue: Google Sheets gives us 408488.0 for "40848,8"
-            # This is because it removes the comma: "40848" + "8" = "408488"
-            # So 408488 ÷ 10 = 40848.8
+            # Convert to string to analyze
+            str_num = f"{num:.10f}"
             
-            # Check if the number looks like it has "extra" digits
-            str_num = f"{num:.10f}".rstrip('0').rstrip('.')
+            # Remove trailing zeros and decimal point if no fractional part
+            if '.0' in str_num:
+                str_num = str_num.split('.0')[0]
             
-            # If number is very large with few trailing zeros, try dividing
-            if num > 10000 and not str_num.endswith('00'):
-                # Try dividing by powers of 10
-                for i in range(1, 4):  # 10, 100, 1000
-                    divisor = 10 ** i
-                    test = num / divisor
+            # The key insight: Google Sheets concatenates "integer" + "decimal"
+            # We need to figure out where to split
+            
+            # Try different split positions (1 or 2 digits for decimals)
+            for decimal_digits in [1, 2]:
+                if len(str_num) > decimal_digits:
+                    # Split into integer and decimal parts
+                    integer_part = str_num[:-decimal_digits]
+                    decimal_part = str_num[-decimal_digits:]
                     
-                    # If test looks like a reasonable sales number
-                    if 1 <= test <= 100000:
-                        # And has reasonable decimal part
-                        decimal_part = test - int(test)
-                        if decimal_part < 0.99:  # Not .999...
-                            return round(test, 2)
+                    # Reconstruct the number
+                    try:
+                        reconstructed = float(f"{integer_part}.{decimal_part}")
+                        
+                        # Check if this looks like a reasonable sales number
+                        if 0.01 <= reconstructed <= 1000000:
+                            # Success! Return with 2 decimal places
+                            return round(reconstructed, 2)
+                    except:
+                        continue
             
-            # Otherwise return rounded to 2 decimals
+            # If splitting didn't work, try simple division
+            # Most values with 2 decimal places need ÷100
+            if num > 100:
+                test_val = num / 100
+                if 0.01 <= test_val <= 1000000:
+                    return round(test_val, 2)
+            
+            # Last resort: return as is
             return round(num, 2)
-        except:
+            
+        except Exception as e:
+            logging.warning(f"Error parsing value '{value}': {e}")
             return None
     
     # FIXED: Simpler formatting function
