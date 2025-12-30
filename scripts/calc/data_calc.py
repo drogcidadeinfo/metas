@@ -169,6 +169,84 @@ def populate_progresso(df_calc):
     logging.info("Progresso populated.")
     return df_calc
 
+def update_premiacao_from_comissoes(sheet, df_calc):
+    logging.info("Calculating Premiação from COMISSOES...")
+
+    df_com = read_worksheet_as_df(sheet, "COMISSOES")
+
+    if df_com.empty:
+        logging.warning("COMISSOES worksheet is empty.")
+        return df_calc
+
+    # Clean headers
+    df_com.columns = df_com.columns.str.strip()
+
+    required_cols = ["Filial", "Código", "Valor Comissão"]
+    for col in required_cols:
+        if col not in df_com.columns:
+            logging.warning(f"Column '{col}' not found in COMISSOES.")
+            return df_calc
+
+    # Normalize keys (TEXT)
+    df_com["Filial_key"] = (
+        df_com["Filial"]
+        .astype(str)
+        .str.upper()
+        .str.replace("F", "", regex=False)
+        .str.strip()
+    )
+
+    df_com["Código_key"] = (
+        df_com["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
+
+    # Keep Valor Comissão as text
+    df_com["Valor Comissão_str"] = df_com["Valor Comissão"].astype(str)
+
+    # Merge
+    df = df_calc.merge(
+        df_com[["Filial_key", "Código_key", "Valor Comissão_str"]],
+        on=["Filial_key", "Código_key"],
+        how="left"
+    )
+
+    def calculate_premiacao(row):
+        meta = br_text_to_float(row["Meta"])
+        realizado = br_text_to_float(row["Valor Realizado"])
+        comissao = br_text_to_float(row["Valor Comissão_str"])
+
+        if meta is None or meta == 0 or comissao is None:
+            return ""
+
+        if realizado is None:
+            realizado = 0.0
+
+        percentual = realizado / meta
+
+        if percentual < 0.80:
+            premio = comissao * 0.5
+        elif percentual < 1.05:
+            premio = comissao
+        elif percentual < 1.10:
+            premio = comissao + 75
+        else:
+            premio = comissao + 150
+
+        return float_to_br_text(premio)
+
+    df["Premiação"] = df.apply(calculate_premiacao, axis=1)
+
+    # Cleanup
+    df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str"])
+
+    logging.info("Premiação populated successfully.")
+    return df
 
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
@@ -375,7 +453,9 @@ def main():
     df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
-    df_calc = populate_progresso(df_calc) 
+    df_calc = populate_progresso(df_calc)
+
+    df_calc = update_premiacao_from_comissoes(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
