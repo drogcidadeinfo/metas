@@ -32,7 +32,7 @@ chrome_options = Options()
 chrome_options.add_argument("--headless")  
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
-# chrome_options.add_argument("--window-size=1920,1080")  # Set dimensions
+chrome_options.add_argument("--window-size=1920,1080")  # Set dimensions
 chrome_options.add_argument("--start-maximized")  # Maximize window
 
 prefs = {
@@ -54,9 +54,7 @@ try:
     driver.get("http://drogcidade.ddns.net:4647/sgfpod1/Login.pod")
 
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "id_cod_usuario"))).send_keys(username)
-    time.sleep(5)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "nom_senha"))).send_keys(password)
-    time.sleep(5)
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.NAME, "login"))).click()
 
     # wait til page loads completely
@@ -64,25 +62,9 @@ try:
     time.sleep(10)
 
     driver.find_element(By.TAG_NAME, "body").send_keys(Keys.F11)
-    time.sleep(5)
+    time.sleep(2)
 
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.ID, "sideMenuSearch"))
-        )
-    
-    except TimeoutException as e:
-        logging.error("Element 'sideMenuSearch' not found — taking screenshot")
-    
-        # ✅ Saved in repo root (same place as README.md)
-        driver.save_screenshot("timeout_sideMenuSearch.png")
-    
-        raise  # IMPORTANT: keeps GitHub Actions red ❌
-    
-    finally:
-        pass
-
-    '''# access "Compras Fornecedores"
+    # access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
     driver.find_element(By.ID, "sideMenuSearch").send_keys("Vendas Produtos")
     driver.find_element(By.ID, "sideMenuSearch").click()
@@ -151,7 +133,7 @@ try:
         file_size = os.path.getsize(new_filepath)
         logging.info(f"File renamed to {new_filename}. Size: {file_size} bytes. File path: {new_filepath}")
     else:
-        logging.error("Download failed. No files found.")'''
+        logging.error("Download failed. No files found.")
 
 finally:
     driver.quit()
