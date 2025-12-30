@@ -29,15 +29,12 @@ jobs:
 
       - name: Run Selenium Scraper
         env:
-          #sci_user: ${{ secrets.SCI_USER }}
-          #sci_password: ${{ secrets.SCI_PASSWORD }}
-        #run: python scripts/info_downloads/raw_users_sci.py
-          trier_user: ${{ secrets.TRIER_USER }}
-          trier_password: ${{ secrets.TRIER_PASSWORD }}
-        run: python scripts/info_downloads/raw_vendas_vendedor.py
+          sci_user: ${{ secrets.SCI_USER }}
+          sci_password: ${{ secrets.SCI_PASSWORD }}
+        run: python scripts/info_downloads/raw_vendas_filial.py
 
-      - name: Process and Upload to Google Sheets
-        env:
-          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: python scripts/file_processing/vendas_vendedor_proc.py
+      #- name: Process and Upload to Google Sheets
+        #env:
+          #GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
+          #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        #run: python scripts/file_processing/vendas_vendedor_proc.py
