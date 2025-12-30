@@ -86,6 +86,15 @@ def build_calc_base(df_trier, df_sci):
         df["Código"].astype(str)
     )
 
+    # Extract Função from Cargo Atual
+    df["Função_calc"] = (
+        df["Cargo Atual"]
+        .astype(str)
+        .str.split("-", n=1)
+        .str[1]
+        .str.strip()
+    )
+
     calc_df = pd.DataFrame({
         "ID": df["ID"],
         "Filial": df["Filial_num"].astype(str).str.zfill(2),
@@ -96,7 +105,7 @@ def build_calc_base(df_trier, df_sci):
         "Valor Restante": "",
         "Progresso": "",
         "Valor Diário Recomendado": "",
-        "Função": df["Função"],
+        "Função": df["Função_calc"],
         "Premiação": ""
     })
 
