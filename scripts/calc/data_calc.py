@@ -144,25 +144,25 @@ def build_calc_base(df_trier, df_sci):
     return calc_df
 
 # --------------------------------------------------
-# Step 2: Update Valor Realizado from VENDAS_VENDEDORES
+# Step 2: Update Valor Realizado from VENDAS_VENDEDOR
 # --------------------------------------------------
 def update_valor_realizado_from_vendas(sheet, df_calc):
-    """Update Valor Realizado in calc from VENDAS_VENDEDORES using Filial + Código match."""
+    """Update Valor Realizado in calc from VENDAS_VENDEDOR using Filial + Código match."""
     
-    logging.info("Reading VENDAS_VENDEDORES worksheet...")
+    logging.info("Reading VENDAS_VENDEDOR worksheet...")
     
-    # Read the VENDAS_VENDEDORES worksheet
+    # Read the VENDAS_VENDEDOR worksheet
     try:
-        df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDORES")
+        df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
     except Exception as e:
-        logging.warning(f"Could not read VENDAS_VENDEDORES worksheet: {e}")
+        logging.warning(f"Could not read VENDAS_VENDEDOR worksheet: {e}")
         return df_calc
     
     if df_vendas.empty:
-        logging.warning("VENDAS_VENDEDORES worksheet is empty.")
+        logging.warning("VENDAS_VENDEDOR worksheet is empty.")
         return df_calc
     
-    # Prepare VENDAS_VENDEDORES data
+    # Prepare VENDAS_VENDEDOR data
     # Extract relevant columns and normalize names
     df_vendas_clean = df_vendas.copy()
     
@@ -173,7 +173,7 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
     required_cols = ["Filial", "Código", "Valor Vendas"]
     for col in required_cols:
         if col not in df_vendas_clean.columns:
-            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDORES worksheet.")
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR worksheet.")
             return df_calc
     
     # Clean and convert data types
@@ -252,14 +252,14 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
     
     # If no matches found, log details for debugging
     if updated_count == 0 and len(df_calc) > 0:
-        logging.warning("No matches found between calc and VENDAS_VENDEDORES")
+        logging.warning("No matches found between calc and VENDAS_VENDEDOR")
         # Log first few Filial/Código pairs for debugging
         sample_pairs = df_calc[["Filial", "Código"]].head(5).to_dict('records')
         logging.warning(f"Sample calc pairs: {sample_pairs}")
         
-        # Also show sample from VENDAS_VENDEDORES
+        # Also show sample from VENDAS_VENDEDOR
         sample_vendas = df_vendas_clean[["Filial", "Código"]].head(5).to_dict('records')
-        logging.warning(f"Sample VENDAS_VENDEDORES pairs: {sample_vendas}")
+        logging.warning(f"Sample VENDAS_VENDEDOR pairs: {sample_vendas}")
     
     return df_calc
 
@@ -309,7 +309,7 @@ def main():
         logging.warning("Calc dataframe is empty. Nothing to upload.")
         return
 
-    # NEW STEP: Update Valor Realizado from VENDAS_VENDEDORES
+    # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
