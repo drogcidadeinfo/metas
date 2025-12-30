@@ -202,16 +202,52 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
     # Clean Valor Vendas - remove currency symbols, commas, etc.
     def clean_valor_vendas(val):
         if pd.isna(val) or val == "":
-            return 0.0
+            return ""
+        
         val_str = str(val).strip()
-        # Remove R$, currency symbols, thousands separators
-        val_str = val_str.replace('R$', '').replace('$', '').replace(',', '.')
-        # Keep only numbers and decimal point
-        val_str = ''.join(c for c in val_str if c.isdigit() or c == '.')
-        try:
-            return float(val_str) if val_str else 0.0
-        except:
-            return 0.0
+        
+        # Remove any existing R$ or currency symbols
+        val_str = val_str.replace('R$', '').replace('$', '').strip()
+        
+        # If it's already in Brazilian format (5.976,56), keep it
+        # Check if it has comma as decimal and dot as thousands
+        if ',' in val_str and '.' in val_str:
+            # Already in Brazilian format, just clean it
+            # Remove any extra spaces and non-numeric except , and .
+            val_str = ''.join(c for c in val_str if c.isdigit() or c in ',.')
+            
+            # Ensure proper format: remove all dots (thousands separators), replace comma with dot for float conversion
+            parts = val_str.split(',')
+            if len(parts) == 2:
+                # Has decimal part
+                integer_part = parts[0].replace('.', '')
+                decimal_part = parts[1]
+                try:
+                    # Convert to float for storage
+                    return float(f"{integer_part}.{decimal_part}")
+                except:
+                    return 0.0
+            else:
+                # No decimal part
+                integer_part = val_str.replace('.', '').replace(',', '')
+                try:
+                    return float(integer_part)
+                except:
+                    return 0.0
+        else:
+            # Assume it's in US/International format or plain number
+            # Remove any non-numeric except dot and comma
+            val_str = ''.join(c for c in val_str if c.isdigit() or c in ',.')
+            
+            # If comma is used as decimal separator (European style)
+            if ',' in val_str and '.' not in val_str:
+                # Replace comma with dot for float conversion
+                val_str = val_str.replace(',', '.')
+            
+            try:
+                return float(val_str) if val_str else 0.0
+            except:
+                return 0.0
     
     df_vendas_clean["Valor Vendas_clean"] = df_vendas_clean["Valor Vendas"].apply(clean_valor_vendas)
     
@@ -226,6 +262,56 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
             vendas_lookup[(filial, codigo)] = valor
     
     logging.info(f"Created lookup for {len(vendas_lookup)} vendas records")
+    
+    # ADDED: Function to format as Brazilian currency (R$ 1.234,56)
+    def format_brazilian_currency(value):
+        """Format a float as Brazilian currency: R$ 1.234,56"""
+        if value == "" or pd.isna(value):
+            return ""
+        
+        try:
+            # Convert to float if it's a string
+            if isinstance(value, str):
+                value = float(value.replace(',', '.'))
+            
+            # Format with Brazilian Portuguese style
+            # Using :,.2f gives 1,234.56, so we need to swap , and .
+            formatted = f"{value:,.2f}"
+            
+            # Swap comma and dot
+            parts = formatted.split('.')
+            if len(parts) == 2:
+                # Has decimal part
+                integer_part = parts[0]
+                decimal_part = parts[1]
+                
+                # Remove commas from integer part and add dots as thousands separators
+                integer_part = integer_part.replace(',', '')
+                
+                # Add thousands separators (every 3 digits from right)
+                if len(integer_part) > 3:
+                    integer_with_sep = ""
+                    for i, digit in enumerate(reversed(integer_part)):
+                        if i > 0 and i % 3 == 0:
+                            integer_with_sep = "." + integer_with_sep
+                        integer_with_sep = digit + integer_with_sep
+                    integer_part = integer_with_sep
+                
+                return f"R$ {integer_part},{decimal_part}"
+            else:
+                # No decimal part
+                integer_part = formatted.replace(',', '')
+                if len(integer_part) > 3:
+                    integer_with_sep = ""
+                    for i, digit in enumerate(reversed(integer_part)):
+                        if i > 0 and i % 3 == 0:
+                            integer_with_sep = "." + integer_with_sep
+                        integer_with_sep = digit + integer_with_sep
+                    integer_part = integer_with_sep
+                return f"R$ {integer_part},00"
+        except Exception as e:
+            logging.warning(f"Error formatting value {value}: {e}")
+            return str(value)
     
     # Update df_calc with matched values
     updated_count = 0
@@ -243,9 +329,9 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         lookup_key = (filial_num, codigo_num)
         
         if lookup_key in vendas_lookup:
-            # Format as currency (R$ with 2 decimals)
+            # CHANGED: Use Brazilian currency formatting
             valor_vendas = vendas_lookup[lookup_key]
-            df_calc.at[idx, "Valor Realizado"] = f"R$ {valor_vendas:,.2f}"
+            df_calc.at[idx, "Valor Realizado"] = format_brazilian_currency(valor_vendas)
             updated_count += 1
     
     logging.info(f"Updated Valor Realizado for {updated_count} records")
@@ -262,7 +348,7 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         logging.warning(f"Sample VENDAS_VENDEDOR pairs: {sample_vendas}")
     
     return df_calc
-
+    
 # --------------------------------------------------
 # Write to calc worksheet
 # --------------------------------------------------
