@@ -62,7 +62,7 @@ try:
     time.sleep(10)
 
     driver.find_element(By.TAG_NAME, "body").send_keys(Keys.F11)
-    time.sleep(2)
+    time.sleep(10)
 
     # access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
