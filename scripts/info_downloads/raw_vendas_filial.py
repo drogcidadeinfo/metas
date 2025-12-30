@@ -65,7 +65,7 @@ try:
     time.sleep(10)
 
     # access "Compras Fornecedores"
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
+    # WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
     driver.find_element(By.ID, "sideMenuSearch").send_keys("Vendas Produtos")
     driver.find_element(By.ID, "sideMenuSearch").click()
     driver.implicitly_wait(2)
