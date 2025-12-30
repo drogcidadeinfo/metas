@@ -48,31 +48,6 @@ chrome_options.add_argument("--unsafely-treat-insecure-origin-as-secure=http://d
 # initialize webdriver
 driver = webdriver.Chrome(options=chrome_options)
 
-def take_screenshot(driver, filename=None):
-    """
-    Take a screenshot and save it to the current directory
-    
-    Args:
-        driver: Selenium WebDriver instance
-        filename (str, optional): Name for the screenshot file
-    """
-    # Get current working directory
-    current_dir = os.getcwd()
-    
-    # Generate filename if not provided
-    if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"screenshot_{timestamp}.png"
-    
-    # Full path for the screenshot
-    screenshot_path = os.path.join(current_dir, filename)
-    
-    # Take screenshot
-    driver.save_screenshot(screenshot_path)
-    
-    print(f"Screenshot saved to: {screenshot_path}")
-    return screenshot_path
-
 # start download process 
 try:
     logging.info("Navigate to the target URL and login")
@@ -89,18 +64,8 @@ try:
     driver.find_element(By.TAG_NAME, "body").send_keys(Keys.F11)
     time.sleep(5)
 
-    try:
-        # Take screenshot
-        screenshot_path = take_screenshot(driver, "test_screenshot.png")
-        
-        # For debugging in GitHub Actions, you might want to check if file exists
-        if os.path.exists(screenshot_path):
-            print(f"✓ Screenshot successfully saved: {os.path.basename(screenshot_path)}")
-        else:
-            print("✗ Failed to save screenshot")
-            
-    finally:
-        pass
+    filename = datetime.now().strftime("screenshot_%Y%m%d_%H%M%S.png")
+    driver.save_screenshot(filename)
 
     # access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
