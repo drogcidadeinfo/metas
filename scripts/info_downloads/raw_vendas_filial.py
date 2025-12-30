@@ -78,9 +78,9 @@ try:
         raise  # IMPORTANT: keeps GitHub Actions red ❌
     
     finally:
-        driver.quit()
+        pass
 
-    # access "Compras Fornecedores"
+    '''# access "Compras Fornecedores"
     WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "sideMenuSearch")))
     driver.find_element(By.ID, "sideMenuSearch").send_keys("Vendas Produtos")
     driver.find_element(By.ID, "sideMenuSearch").click()
@@ -149,7 +149,7 @@ try:
         file_size = os.path.getsize(new_filepath)
         logging.info(f"File renamed to {new_filename}. Size: {file_size} bytes. File path: {new_filepath}")
     else:
-        logging.error("Download failed. No files found.")
+        logging.error("Download failed. No files found.")'''
 
 finally:
     driver.quit()
