@@ -211,9 +211,9 @@ def update_premiacao_from_comissoes(sheet, df_calc):
     df_com["Filial_key"] = (
         df_com["Filial"]
         .astype(str)
-        .str.upper()
-        .str.replace("F", "", regex=False)
         .str.strip()
+        .astype(int)   # removes leading zero
+        .astype(str)
     )
 
     df_com["Código_key"] = (
@@ -223,7 +223,12 @@ def update_premiacao_from_comissoes(sheet, df_calc):
         .str.strip()
     )
 
-    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Filial_key"] = (
+        df_calc["Filial"]
+        .astype(str)
+        .str.strip()
+    )
+
     df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
 
     # Keep Valor Comissão as text
