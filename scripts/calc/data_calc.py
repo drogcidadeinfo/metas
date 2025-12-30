@@ -263,43 +263,37 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
         return None'''
 
     def parse_brazilian_number(value):
-        """Parse Brazilian numbers from Google Sheets - always 2 decimal places"""
+        """Simple parser: always divide by appropriate power of 10"""
         if pd.isna(value) or value == "":
             return None
         
         try:
-            # Convert to string and remove any decimal point
-            str_val = str(value)
+            num = float(value)
+            str_num = str(int(num))  # Get integer part as string
             
-            # Remove .0 if present
-            if str_val.endswith('.0'):
-                str_val = str_val[:-2]
+            # Rules based on the integer value
+            if num < 100:
+                # Small numbers like 14, 50, 99
+                return round(num, 2)  # Already correct
             
-            # Now we have a string of digits like "142", "125848", "14", "1258480"
-            # The rule: Brazilian currency ALWAYS has 2 decimal places
-            # So we need to interpret the last 2 digits as cents
+            elif 100 <= num <= 999:
+                # Numbers like 142 (from 14,2) or 500 (from 50,0)
+                # Probably has 1 decimal place originally
+                return round(num / 10, 2)
             
-            # If the string is too short (like "5"), pad with zeros
-            if len(str_val) == 1:
-                str_val = "0" + str_val  # "5" → "05"
+            elif 1000 <= num <= 999999:
+                # Numbers like 597656 (from 5976,56) or 125848 (from 12584,8)
+                # Probably has 2 decimal places originally
+                return round(num / 100, 2)
             
-            # Split into integer and decimal parts (always 2 decimal places)
-            if len(str_val) <= 2:
-                # Less than 1 real (like "50" means R$ 0,50)
-                integer_part = "0"
-                decimal_part = str_val.zfill(2)  # Ensure 2 digits
+            elif num >= 1000000:
+                # Very large numbers, divide by 100
+                return round(num / 100, 2)
+            
             else:
-                # Normal case: last 2 digits are cents
-                integer_part = str_val[:-2]
-                decimal_part = str_val[-2:]
-            
-            # Reconstruct as float
-            result = float(f"{integer_part}.{decimal_part}")
-            
-            return round(result, 2)
-            
-        except Exception as e:
-            logging.warning(f"Error parsing {value}: {e}")
+                return round(num, 2)
+                
+        except:
             return None
     
     # FIXED: Simpler formatting function
