@@ -146,7 +146,9 @@ def build_calc_base(df_trier, df_sci):
 # --------------------------------------------------
 # Step 2: Update Valor Realizado from VENDAS_VENDEDOR
 # --------------------------------------------------
-def update_valor_realizado_from_vendas_merge(sheet, df_calc):
+def update_valor_realizado_from_vendas_simple(sheet, df_calc):
+    """Update Valor Realizado in calc from VENDAS_VENDEDOR - pandas merge version."""
+    
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
     
     try:
@@ -155,38 +157,104 @@ def update_valor_realizado_from_vendas_merge(sheet, df_calc):
         logging.warning(f"Could not read VENDAS_VENDEDOR worksheet: {e}")
         return df_calc
     
-    # Clean and prepare df_vendas
-    df_vendas_clean = df_vendas.copy()
+    if df_vendas.empty:
+        logging.warning("VENDAS_VENDEDOR worksheet is empty.")
+        return df_calc
     
-    # Normalize Filial in df_vendas
-    df_vendas_clean["Filial_norm"] = (
-        df_vendas_clean["Filial"]
+    # Clean column names
+    df_vendas.columns = df_vendas.columns.str.strip()
+    
+    # Check required columns
+    required_cols = ["Filial", "Código", "Valor Vendas"]
+    for col in required_cols:
+        if col not in df_vendas.columns:
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR worksheet.")
+            return df_calc
+    
+    # Normalize Filial in both dataframes for matching
+    df_vendas_norm = df_vendas.copy()
+    
+    # Normalize Filial: F01 → 1
+    df_vendas_norm["Filial_norm"] = (
+        df_vendas_norm["Filial"]
         .astype(str)
+        .str.upper()
         .str.replace("F", "", regex=False)
         .astype(int, errors='ignore')
     )
     
-    # Normalize Código in df_vendas
-    df_vendas_clean["Código_norm"] = (
-        df_vendas_clean["Código"]
+    # Normalize Código: remove .0
+    df_vendas_norm["Código_norm"] = (
+        df_vendas_norm["Código"]
         .astype(str)
         .str.replace(".0", "", regex=False)
         .astype(int, errors='ignore')
     )
     
-    # Merge on both Filial and Código
+    # Helper function to format as Brazilian currency
+    def format_brazilian(value):
+        if pd.isna(value) or value == "":
+            return ""
+        
+        # If already has R$, clean and reformat
+        val_str = str(value).strip()
+        val_str = val_str.replace('R$', '').replace('$', '').strip()
+        
+        # Remove all non-numeric except . and ,
+        val_str = ''.join(c for c in val_str if c.isdigit() or c in ',.')
+        
+        # Try to parse as float
+        try:
+            # Replace comma with dot for float conversion if comma is decimal
+            if ',' in val_str and '.' not in val_str:
+                # Check if comma is decimal (has 1-2 digits after)
+                parts = val_str.split(',')
+                if len(parts) == 2 and len(parts[1]) <= 2:
+                    val_str = val_str.replace(',', '.')
+            
+            # Convert to float
+            num = float(val_str.replace(',', '').replace('.', ''))
+            
+            # If value was like "1.234,56", we need to divide by 100 if it had 2 decimal places
+            if ',' in str(value) and str(value).split(',')[-1].isdigit():
+                if len(str(value).split(',')[-1]) == 2:
+                    num = num / 100
+            
+            # Format as Brazilian: 1234.56 → R$ 1.234,56
+            # Get integer and decimal parts
+            integer_part = int(num)
+            decimal_part = round((num - integer_part) * 100)
+            
+            # Format integer part with dots
+            int_str = f"{integer_part:,}".replace(",", ".")
+            
+            return f"R$ {int_str},{decimal_part:02d}"
+        except:
+            # If conversion fails, try to preserve original with R$
+            if val_str:
+                return f"R$ {val_str}"
+            return ""
+    
+    # Apply formatting to Valor Vendas
+    df_vendas_norm["Valor Vendas_formatted"] = df_vendas_norm["Valor Vendas"].apply(format_brazilian)
+    
+    # Merge
     df_merged = df_calc.merge(
-        df_vendas_clean[["Filial_norm", "Código_norm", "Valor Vendas"]],
+        df_vendas_norm[["Filial_norm", "Código_norm", "Valor Vendas_formatted"]],
         left_on=["Filial", "Código"],
         right_on=["Filial_norm", "Código_norm"],
         how="left"
     )
     
-    # Update Valor Realizado with merged values
-    df_merged["Valor Realizado"] = df_merged["Valor Vendas"]
+    # Update Valor Realizado where we have matches
+    df_merged["Valor Realizado"] = df_merged["Valor Vendas_formatted"].combine_first(df_merged["Valor Realizado"])
     
-    # Drop the temporary columns
-    df_merged = df_merged.drop(columns=["Filial_norm", "Código_norm", "Valor Vendas"])
+    # Drop temporary columns
+    df_merged = df_merged.drop(columns=["Filial_norm", "Código_norm", "Valor Vendas_formatted"])
+    
+    # Log results
+    updated_count = df_merged["Valor Realizado"].notna().sum() - (df_calc["Valor Realizado"] != "").sum()
+    logging.info(f"Updated Valor Realizado for {updated_count} records")
     
     return df_merged
     
@@ -237,7 +305,7 @@ def main():
         return
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
-    df_calc = update_valor_realizado_from_vendas_merge(sheet, df_calc)
+    df_calc = update_valor_realizado_from_vendas_simple(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
