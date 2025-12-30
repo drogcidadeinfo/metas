@@ -33,14 +33,16 @@ jobs:
           trier_password: ${{ secrets.SCI_PASSWORD }}
         run: python scripts/info_downloads/raw_vendas_filial.py
 
+      
       - name: Commit screenshot
+        if: always()   # 👈 THIS IS THE FIX
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
+          git status
           git add *.png
           git commit -m "Add Selenium failure screenshot" || echo "No changes"
           git push
-
 
       #- name: Process and Upload to Google Sheets
         #env:
