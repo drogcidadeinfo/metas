@@ -146,208 +146,49 @@ def build_calc_base(df_trier, df_sci):
 # --------------------------------------------------
 # Step 2: Update Valor Realizado from VENDAS_VENDEDOR
 # --------------------------------------------------
-def update_valor_realizado_from_vendas(sheet, df_calc):
-    """Update Valor Realizado in calc from VENDAS_VENDEDOR using Filial + Código match."""
-    
+def update_valor_realizado_from_vendas_merge(sheet, df_calc):
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
     
-    # Read the VENDAS_VENDEDOR worksheet
     try:
         df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
     except Exception as e:
         logging.warning(f"Could not read VENDAS_VENDEDOR worksheet: {e}")
         return df_calc
     
-    if df_vendas.empty:
-        logging.warning("VENDAS_VENDEDOR worksheet is empty.")
-        return df_calc
-    
-    # Prepare VENDAS_VENDEDOR data
-    # Extract relevant columns and normalize names
+    # Clean and prepare df_vendas
     df_vendas_clean = df_vendas.copy()
     
-    # Ensure column names are properly formatted
-    df_vendas_clean.columns = df_vendas_clean.columns.str.strip()
+    # Normalize Filial in df_vendas
+    df_vendas_clean["Filial_norm"] = (
+        df_vendas_clean["Filial"]
+        .astype(str)
+        .str.replace("F", "", regex=False)
+        .astype(int, errors='ignore')
+    )
     
-    # Check required columns exist
-    required_cols = ["Filial", "Código", "Valor Vendas"]
-    for col in required_cols:
-        if col not in df_vendas_clean.columns:
-            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR worksheet.")
-            return df_calc
+    # Normalize Código in df_vendas
+    df_vendas_clean["Código_norm"] = (
+        df_vendas_clean["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .astype(int, errors='ignore')
+    )
     
-    # Clean and convert data types
-    # For Filial: handle both "F01" format and numeric
-    def normalize_filial(val):
-        val_str = str(val).strip().upper()
-        if val_str.startswith('F'):
-            return int(val_str.replace('F', ''))
-        try:
-            return int(float(val_str))
-        except:
-            return None
+    # Merge on both Filial and Código
+    df_merged = df_calc.merge(
+        df_vendas_clean[["Filial_norm", "Código_norm", "Valor Vendas"]],
+        left_on=["Filial", "Código"],
+        right_on=["Filial_norm", "Código_norm"],
+        how="left"
+    )
     
-    # For Código: remove .0 and convert to int
-    def normalize_codigo(val):
-        val_str = str(val).strip()
-        val_str = val_str.replace('.0', '') if '.0' in val_str else val_str
-        try:
-            return int(float(val_str)) if val_str else None
-        except:
-            return None
+    # Update Valor Realizado with merged values
+    df_merged["Valor Realizado"] = df_merged["Valor Vendas"]
     
-    df_vendas_clean["Filial_norm"] = df_vendas_clean["Filial"].apply(normalize_filial)
-    df_vendas_clean["Código_norm"] = df_vendas_clean["Código"].apply(normalize_codigo)
+    # Drop the temporary columns
+    df_merged = df_merged.drop(columns=["Filial_norm", "Código_norm", "Valor Vendas"])
     
-    # Clean Valor Vendas - remove currency symbols, commas, etc.
-    def clean_valor_vendas(val):
-        if pd.isna(val) or val == "":
-            return ""
-        
-        val_str = str(val).strip()
-        
-        # Remove any existing R$ or currency symbols
-        val_str = val_str.replace('R$', '').replace('$', '').strip()
-        
-        # If it's already in Brazilian format (5.976,56), keep it
-        # Check if it has comma as decimal and dot as thousands
-        if ',' in val_str and '.' in val_str:
-            # Already in Brazilian format, just clean it
-            # Remove any extra spaces and non-numeric except , and .
-            val_str = ''.join(c for c in val_str if c.isdigit() or c in ',.')
-            
-            # Ensure proper format: remove all dots (thousands separators), replace comma with dot for float conversion
-            parts = val_str.split(',')
-            if len(parts) == 2:
-                # Has decimal part
-                integer_part = parts[0].replace('.', '')
-                decimal_part = parts[1]
-                try:
-                    # Convert to float for storage
-                    return float(f"{integer_part}.{decimal_part}")
-                except:
-                    return 0.0
-            else:
-                # No decimal part
-                integer_part = val_str.replace('.', '').replace(',', '')
-                try:
-                    return float(integer_part)
-                except:
-                    return 0.0
-        else:
-            # Assume it's in US/International format or plain number
-            # Remove any non-numeric except dot and comma
-            val_str = ''.join(c for c in val_str if c.isdigit() or c in ',.')
-            
-            # If comma is used as decimal separator (European style)
-            if ',' in val_str and '.' not in val_str:
-                # Replace comma with dot for float conversion
-                val_str = val_str.replace(',', '.')
-            
-            try:
-                return float(val_str) if val_str else 0.0
-            except:
-                return 0.0
-    
-    df_vendas_clean["Valor Vendas_clean"] = df_vendas_clean["Valor Vendas"].apply(clean_valor_vendas)
-    
-    # Create a lookup dictionary with (Filial, Código) as key
-    vendas_lookup = {}
-    for _, row in df_vendas_clean.iterrows():
-        filial = row.get("Filial_norm")
-        codigo = row.get("Código_norm")
-        valor = row.get("Valor Vendas_clean")
-        
-        if filial is not None and codigo is not None:
-            vendas_lookup[(filial, codigo)] = valor
-    
-    logging.info(f"Created lookup for {len(vendas_lookup)} vendas records")
-    
-    # ADDED: Function to format as Brazilian currency (R$ 1.234,56)
-    def format_brazilian_currency(value):
-        """Format a float as Brazilian currency: R$ 1.234,56"""
-        if value == "" or pd.isna(value):
-            return ""
-        
-        try:
-            # Convert to float if it's a string
-            if isinstance(value, str):
-                value = float(value.replace(',', '.'))
-            
-            # Format with Brazilian Portuguese style
-            # Using :,.2f gives 1,234.56, so we need to swap , and .
-            formatted = f"{value:,.2f}"
-            
-            # Swap comma and dot
-            parts = formatted.split('.')
-            if len(parts) == 2:
-                # Has decimal part
-                integer_part = parts[0]
-                decimal_part = parts[1]
-                
-                # Remove commas from integer part and add dots as thousands separators
-                integer_part = integer_part.replace(',', '')
-                
-                # Add thousands separators (every 3 digits from right)
-                if len(integer_part) > 3:
-                    integer_with_sep = ""
-                    for i, digit in enumerate(reversed(integer_part)):
-                        if i > 0 and i % 3 == 0:
-                            integer_with_sep = "." + integer_with_sep
-                        integer_with_sep = digit + integer_with_sep
-                    integer_part = integer_with_sep
-                
-                return f"R$ {integer_part},{decimal_part}"
-            else:
-                # No decimal part
-                integer_part = formatted.replace(',', '')
-                if len(integer_part) > 3:
-                    integer_with_sep = ""
-                    for i, digit in enumerate(reversed(integer_part)):
-                        if i > 0 and i % 3 == 0:
-                            integer_with_sep = "." + integer_with_sep
-                        integer_with_sep = digit + integer_with_sep
-                    integer_part = integer_with_sep
-                return f"R$ {integer_part},00"
-        except Exception as e:
-            logging.warning(f"Error formatting value {value}: {e}")
-            return str(value)
-    
-    # Update df_calc with matched values
-    updated_count = 0
-    for idx, row in df_calc.iterrows():
-        filial = row.get("Filial")
-        codigo = row.get("Código")
-        
-        # Ensure both values are numeric
-        try:
-            filial_num = int(filial) if not pd.isna(filial) else None
-            codigo_num = int(codigo) if not pd.isna(codigo) else None
-        except (ValueError, TypeError):
-            continue
-        
-        lookup_key = (filial_num, codigo_num)
-        
-        if lookup_key in vendas_lookup:
-            # CHANGED: Use Brazilian currency formatting
-            valor_vendas = vendas_lookup[lookup_key]
-            df_calc.at[idx, "Valor Realizado"] = format_brazilian_currency(valor_vendas)
-            updated_count += 1
-    
-    logging.info(f"Updated Valor Realizado for {updated_count} records")
-    
-    # If no matches found, log details for debugging
-    if updated_count == 0 and len(df_calc) > 0:
-        logging.warning("No matches found between calc and VENDAS_VENDEDOR")
-        # Log first few Filial/Código pairs for debugging
-        sample_pairs = df_calc[["Filial", "Código"]].head(5).to_dict('records')
-        logging.warning(f"Sample calc pairs: {sample_pairs}")
-        
-        # Also show sample from VENDAS_VENDEDOR
-        sample_vendas = df_vendas_clean[["Filial", "Código"]].head(5).to_dict('records')
-        logging.warning(f"Sample VENDAS_VENDEDOR pairs: {sample_vendas}")
-    
-    return df_calc
+    return df_merged
     
 # --------------------------------------------------
 # Write to calc worksheet
@@ -396,7 +237,7 @@ def main():
         return
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
-    df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
+    df_calc = update_valor_realizado_from_vendas_merge(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
