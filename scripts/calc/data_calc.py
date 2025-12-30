@@ -377,5 +377,34 @@ def main():
 
     update_calc_sheet(sheet, df_calc)
 
+#if __name__ == "__main__":
+    #main()
+# Test the parsing function
 if __name__ == "__main__":
-    main()
+    # Test cases
+    test_values = [
+        "5976,56",
+        "25574,86", 
+        "270,52",
+        "40848,8",
+        "24604,05",
+        "36691,04",
+        "R$ 5.976,56",
+        "1.234,56",
+        "1234,56",
+        "1234.56",
+        "1,234.56"
+    ]
+    
+    # Test the parse_brazilian_number function
+    print("Testing parse_brazilian_number():")
+    for val in test_values:
+        result = parse_brazilian_number(val)
+        print(f"  '{val}' -> {result}")
+    
+    # Test the format_brazilian_currency function  
+    print("\nTesting format_brazilian_currency():")
+    test_numbers = [5976.56, 25574.86, 270.52, 40848.8, 24604.05, 36691.04]
+    for num in test_numbers:
+        result = format_brazilian_currency(num)
+        print(f"  {num} -> {result}")
