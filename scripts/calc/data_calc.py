@@ -128,6 +128,48 @@ def populate_valor_restante(df_calc):
     logging.info("Valor Restante populated.")
     return df_calc
 
+def br_text_to_float(value):
+    """Convert Brazilian number text to float: 12.345,67 → 12345.67"""
+    if value is None or str(value).strip() == "":
+        return None
+
+    try:
+        s = str(value).strip()
+        s = s.replace(".", "").replace(",", ".")
+        return float(s)
+    except:
+        return None
+
+def populate_progresso(df_calc):
+    logging.info("Calculating Progresso (Valor Realizado / Meta)...")
+
+    def calculate_row(row):
+        meta = br_text_to_float(row["Meta"])
+        realizado = br_text_to_float(row["Valor Realizado"])
+
+        # If Meta is empty or zero → do nothing
+        if meta is None or meta == 0:
+            return ""
+
+        # If Valor Realizado empty → treat as zero
+        if realizado is None:
+            realizado = 0.0
+
+        progresso = (realizado / meta) * 100
+
+        # Format as Brazilian percentage text
+        progresso = round(progresso, 2)
+        inteiro = int(progresso)
+        decimal = int(round((progresso - inteiro) * 100))
+
+        return f"{inteiro},{decimal:02d}%"
+
+    df_calc["Progresso"] = df_calc.apply(calculate_row, axis=1)
+
+    logging.info("Progresso populated.")
+    return df_calc
+
+
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
 # --------------------------------------------------
@@ -333,6 +375,7 @@ def main():
     df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
+    df_calc = populate_progresso(df_calc) 
 
     update_calc_sheet(sheet, df_calc)
 
