@@ -6,6 +6,8 @@ import json
 import time
 import logging
 import pandas as pd
+import xlrd
+from openpyxl import Workbook
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 from googleapiclient.errors import HttpError
