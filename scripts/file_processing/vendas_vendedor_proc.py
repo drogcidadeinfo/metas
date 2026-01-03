@@ -167,7 +167,7 @@ def main():
             logging.warning("No valid rows found. Skipping upload.")
             return
 
-        update_google_sheet(df, sheet_id, VENDAS_VENDEDOR)
+        update_google_sheet(df, sheet_id, "VENDAS_VENDEDOR")
 
         os.remove(file_path)
         logging.info(f"File removed: {file_path}")
