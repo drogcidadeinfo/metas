@@ -3,7 +3,8 @@ import glob
 import gspread
 import json
 import time
-import loggingimport xlrd
+import logging
+import xlrd
 from openpyxl import Workbook
 from openpyxl import load_workbook
 import pandas as pd
