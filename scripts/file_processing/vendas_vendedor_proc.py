@@ -33,81 +33,69 @@ def retry_api_call(func, retries=3, delay=2):
                 raise
     raise Exception("Max retries reached.")
 
-def process_excel_data(input_file):
-    logging.info("Processing sales Excel file...")
+def convert_xls_to_xlsx(xls_path):
+    logging.info("Converting .xls to .xlsx...")
 
-    # Read Excel and normalize structure
+    book = xlrd.open_workbook(xls_path)
+    sheet = book.sheet_by_index(0)
+
+    wb = Workbook()
+    ws = wb.active
+
+    for row_idx in range(sheet.nrows):
+        ws.append(sheet.row_values(row_idx))
+
+    xlsx_path = xls_path + "x"
+    wb.save(xlsx_path)
+
+    logging.info(f"Converted file saved as: {xlsx_path}")
+    return xlsx_path
+
+def format_qtd_vendas(value):
+    try:
+        value = float(value)
+        if value.is_integer():
+            return f"{int(value):,}".replace(",", ".")
+        return f"{value:,}".replace(",", ".")
+    except Exception:
+        return value
+
+def process_excel_data(file_path):
+    logging.info("Processing Excel file (vendas vendedor)...")
+
     df = pd.read_excel(
-        input_file,
-        skiprows=9,
-        header=0
+        file_path,
+        header=9,
+        dtype={"qtd. vendas": str}
     )
 
-    df = df.drop(df.columns[:2], axis=1)
-    df = df.drop(columns=["Unnamed: 6", "Qtd. Vendas","Valor Custo", "Margem Lucro"], errors="ignore")
-    
-    # Remove total rows FIRST
-    df = df[~df.iloc[:, 0].astype(str).str.contains('Total Filial:|Total Geral:', na=False)]
-    
-    # Better approach: Process row by row
+    df.columns = df.columns.str.strip().str.lower()
+
     current_filial = None
-    data_rows = []
-    
-    for idx, row in df.iterrows():
-        first_val = str(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
-        
-        # Check if this is a Filial row
-        if 'Filial:' in first_val:
-            # Extract the Filial number (it's usually the first character after "Filial:")
-            # Filial number might be in column 1
-            if pd.notna(row.iloc[1]):
-                current_filial = str(row.iloc[1]).strip()
-            continue
-        
-        # Check if this is a data row (code should be numeric)
-        if first_val.replace('.', '').replace(',', '').isdigit():
-            code = first_val.strip()
-            
-            # Find the Vendedor name - it could be in column 1 or 2
-            vendedor = ''
-            valor_vendas = ''
-            
-            # Try column 2 first for Vendedor
-            if len(row) > 2 and pd.notna(row.iloc[2]):
-                vendedor = str(row.iloc[2]).strip()
-                if len(row) > 3 and pd.notna(row.iloc[3]):
-                    valor_vendas = str(row.iloc[3])
-            # Otherwise try column 1
-            elif len(row) > 1 and pd.notna(row.iloc[1]):
-                vendedor = str(row.iloc[1]).strip()
-                if len(row) > 2 and pd.notna(row.iloc[2]):
-                    valor_vendas = str(row.iloc[2])
-            
-            # Only add if we have all required data
-            if code and vendedor and current_filial:
-                data_rows.append({
-                    'Filial': current_filial,
-                    'Código': code,
-                    'Vendedor': vendedor,
-                    'Valor Vendas': valor_vendas
-                })
-    
-    # Create the clean DataFrame
-    df_clean = pd.DataFrame(data_rows)
-    
-    # Convert Filial to integer (extract just the number)
-    df_clean['Filial'] = df_clean['Filial'].astype(str).str.extract(r'(\d+)')[0].astype(int)
-    
-    # Convert Valor Vendas to numeric
-    df_clean['Valor Vendas'] = (
-        df_clean['Valor Vendas']
-        .astype(str)
-        .str.replace('.', '', regex=False)  # Remove thousands separator
-        .str.replace(',', '.', regex=False)  # Replace comma with decimal point
-        .astype(float)
-    )
+    data = []
 
-    return df_clean
+    for _, row in df.iterrows():
+        codigo_raw = str(row.get("código", "")).strip()
+
+        if "filial:" in codigo_raw.lower():
+            current_filial = row.get("unnamed: 3")
+            continue
+
+        if codigo_raw.isdigit():
+            data.append({
+                "Código": codigo_raw,
+                "Filial": current_filial,
+                "Colaborador": row.get("vendedor"),
+                "Qtd Vendas": format_qtd_vendas(row.get("qtd. vendas")),
+                "Coluna Vazia": "",
+                "Valor Custo": row.get("valor custo"),
+                "Faturamento": row.get("valor vendas"),
+            })
+
+    result_df = pd.DataFrame(data)
+    logging.info(f"Rows processed: {len(result_df)}")
+
+    return result_df
 
 def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     logging.info("Checking Google credentials...")
@@ -127,73 +115,31 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     client = gspread.authorize(creds)
     worksheet = client.open_by_key(sheet_id).worksheet(worksheet_name)
 
-    # Fill NaN values with empty strings
-    df = df.fillna("")
-    
-    # Add headers to the data
-    data_with_headers = [df.columns.tolist()] + df.values.tolist()
-    
-    # Calculate range
-    start_cell = f"{start_col}1"
-    end_row = len(data_with_headers)  # Include header row
-    end_col = chr(ord(start_col) + len(df.columns) - 1)
-    dynamic_range = f"{start_col}1:{end_col}{end_row}"
+    df = df.rename(columns={
+        "Faturamento": "Valor Vendas",
+        "Colaborador": "Vendedor",
+    })
 
-    logging.info(f"Clearing and updating range {dynamic_range}")
-    
-    # Clear the range first
+    COLUMN_ORDER = [
+    "Filial",
+    "Código",
+    "Vendedor",
+    "Valor Vendas",
+    ]
+
+    df = df[COLUMN_ORDER]
+
+    values = [df.columns.tolist()] + df.values.tolist()
+
+    start_cell = "A1"
+    end_row = len(df) + 1
+    end_cell = f"G{end_row}"
+    dynamic_range = f"{start_cell}:{end_cell}"
+
     worksheet.batch_clear([dynamic_range])
-    
-    # Upload data with headers
-    logging.info("Uploading data with headers...")
-    retry_api_call(
-        lambda: worksheet.update(
-            dynamic_range,
-            data_with_headers,
-            value_input_option="USER_ENTERED"
-        )
-    )
+    worksheet.update(dynamic_range, values, value_input_option="USER_ENTERED")
 
-    logging.info(f"Google Sheet updated successfully with {len(df)} rows of data.")
-
-'''def update_google_sheet(df, sheet_id, worksheet_name, start_col="B"):
-    logging.info("Checking Google credentials...")
-
-    creds_json = os.getenv("GSA_CREDENTIALS")
-    if not creds_json:
-        raise RuntimeError("Google credentials not found.")
-
-    creds = Credentials.from_service_account_info(
-        json.loads(creds_json),
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-    )
-
-    client = gspread.authorize(creds)
-    worksheet = client.open_by_key(sheet_id).worksheet(worksheet_name)
-
-    df = df.fillna("")
-
-    start_cell = f"{start_col}1"
-    end_row = len(df)
-    end_col = chr(ord(start_col) + len(df.columns) - 1)
-    dynamic_range = f"{start_col}1:{end_col}{end_row}"
-
-    logging.info(f"Clearing range {dynamic_range}")
-    worksheet.batch_clear([dynamic_range])
-
-    logging.info("Uploading data...")
-    retry_api_call(
-        lambda: worksheet.update(
-            dynamic_range,
-            df.values.tolist(),
-            value_input_option="USER_ENTERED"
-        )
-    )
-
-    logging.info("Google Sheet updated successfully.")'''
+    logging.info(f"Google Sheet updated: {dynamic_range}")
 
 def main():
     download_dir = "/home/runner/work/metas/metas/"
@@ -207,6 +153,9 @@ def main():
         logging.warning("No file found to process.")
         return
 
+    if file_path.endswith(".xls"):
+        file_path = convert_xls_to_xlsx(file_path)
+
     logging.info(f"Processing file: {file_path}")
 
     try:
@@ -216,7 +165,7 @@ def main():
             logging.warning("No valid rows found. Skipping upload.")
             return
 
-        update_google_sheet(df, sheet_id, "VENDAS_VENDEDOR")
+        update_google_sheet(df, sheet_id, VENDAS_VENDEDOR)
 
         os.remove(file_path)
         logging.info(f"File removed: {file_path}")
