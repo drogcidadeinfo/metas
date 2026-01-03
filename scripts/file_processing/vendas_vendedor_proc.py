@@ -117,6 +117,9 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     client = gspread.authorize(creds)
     worksheet = client.open_by_key(sheet_id).worksheet(worksheet_name)
 
+    # Clear existing data
+    worksheet.batch_clear(["A1:Z"])
+
     df = df.rename(columns={
         "Faturamento": "Valor Vendas",
         "Colaborador": "Vendedor",
