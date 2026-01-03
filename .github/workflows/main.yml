@@ -67,10 +67,10 @@ jobs:
         env:
           trier_user: ${{ secrets.TRIER_USER }}
           trier_password: ${{ secrets.TRIER_PASSWORD }}
-        run: python scripts/info_downloads/raw_vendas_vendedor.py
+        run: python scripts/info_downloads/raw_vendas_filial.py
 
       - name: vendas_vendedor procUp to google sheets
         env:
           GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
           SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: python scripts/file_processing/vendas_vendedor_proc.py
+        run: python scripts/file_processing/vendas_filial_proc.py
