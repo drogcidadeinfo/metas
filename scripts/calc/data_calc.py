@@ -101,6 +101,57 @@ def float_to_br_text(value):
 
 import math
 
+def read_existing_meta(sheet):
+    """
+    Reads existing calc sheet and returns {ID: Meta}
+    """
+    try:
+        ws = sheet.worksheet("calc")
+    except gspread.exceptions.WorksheetNotFound:
+        logging.info("calc sheet does not exist yet — no Meta to preserve.")
+        return {}
+
+    values = ws.get_all_values()
+    if not values:
+        return {}
+
+    headers = values[0]
+
+    if "ID" not in headers or "Meta" not in headers:
+        logging.warning("Existing calc has no ID or Meta column.")
+        return {}
+
+    df_existing = pd.DataFrame(values[1:], columns=headers)
+
+    meta_map = {}
+
+    for _, row in df_existing.iterrows():
+        row_id = str(row["ID"]).strip()
+        meta = str(row["Meta"]).strip()
+
+        if row_id and meta:
+            meta_map[row_id] = meta
+
+    logging.info(f"Preserved Meta values: {len(meta_map)}")
+    return meta_map
+
+def restore_meta(df_calc, meta_map):
+    """
+    Restore Meta values into df_calc using ID as key
+    """
+    if not meta_map:
+        logging.info("No Meta values to restore.")
+        return df_calc
+
+    df_calc["ID_key"] = df_calc["ID"].astype(str).str.strip()
+
+    df_calc["Meta"] = df_calc["ID_key"].map(meta_map).fillna("")
+
+    df_calc = df_calc.drop(columns=["ID_key"])
+
+    logging.info("Meta column restored successfully.")
+    return df_calc
+
 def float_to_br_text_2(value):
     if value is None or pd.isna(value):
         return ""
@@ -551,7 +602,15 @@ def main():
         logging.warning("One or more source worksheets are empty.")
         return
 
+    # df_calc = build_calc_base(df_trier, df_sci)
+
+    # Preserve existing Meta BEFORE rebuilding
+    existing_meta = read_existing_meta(sheet)
+    
     df_calc = build_calc_base(df_trier, df_sci)
+    
+    # Restore Meta AFTER rebuilding
+    df_calc = restore_meta(df_calc, existing_meta)
 
     if df_calc.empty:
         logging.warning("Calc dataframe is empty. Nothing to upload.")
