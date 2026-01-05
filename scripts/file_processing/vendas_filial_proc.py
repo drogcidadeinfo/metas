@@ -16,11 +16,21 @@ from openpyxl.styles import Font
 # Config logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-def get_latest_file(directory='.', extension='xls'):
+'''def get_latest_file(directory='.', extension='xls'):
     files = glob.glob(os.path.join(directory, f'*.{extension}'))
     if not files:
         logging.warning("No files found with the specified extension.")
         return None
+    return max(files, key=os.path.getmtime)'''
+
+def get_latest_file(directory='.'):
+    files = glob.glob(os.path.join(directory, '*.xls')) + \
+            glob.glob(os.path.join(directory, '*.xlsx'))
+
+    if not files:
+        logging.warning("No Excel files found.")
+        return None
+
     return max(files, key=os.path.getmtime)
 
 def retry_api_call(func, retries=3, delay=2):
