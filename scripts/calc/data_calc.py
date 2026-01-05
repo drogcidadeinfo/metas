@@ -147,6 +147,30 @@ def populate_valor_restante(df_calc):
     logging.info("Valor Restante populated.")
     return df_calc
 
+def remove_colaborador(df, nome):
+    """
+    Remove all rows where Colaborador matches the given name
+    (case-insensitive, trimmed).
+    """
+    logging.info(f"Removing colaborador: {nome}")
+
+    nome_norm = str(nome).strip().upper()
+
+    before = len(df)
+
+    df = df[
+        df["Colaborador"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+        != nome_norm
+    ].reset_index(drop=True)
+
+    removed = before - len(df)
+    logging.info(f"Rows removed: {removed}")
+
+    return df
+
 def br_text_to_float(value):
     """Convert Brazilian number text to float: 12.345,67 → 12345.67"""
     if value is None or str(value).strip() == "":
@@ -478,6 +502,11 @@ def main():
     if df_calc.empty:
         logging.warning("Calc dataframe is empty. Nothing to upload.")
         return
+
+    df_calc = remove_colaborador(
+        df_calc,
+        "WESLEY MIRANDA PEREIRA"
+    )
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
