@@ -212,17 +212,29 @@ def populate_progresso(df_calc):
     logging.info("Progresso populated.")
     return df_calc
 
+from datetime import date, timedelta
+import calendar
+
 def populate_valor_diario_recomendado(df_calc):
     logging.info("Calculating Valor Diário Recomendado...")
 
-    header_dates = get_header_dates()
-    days_remaining = header_dates["days_remaining"]
+    # --------------------------------------------------
+    # Calculate remaining days in current month
+    # --------------------------------------------------
+    today = date.today()
+    last_day = calendar.monthrange(today.year, today.month)[1]
+    end_of_month = date(today.year, today.month, last_day)
+
+    days_remaining = (end_of_month - today).days + 1
 
     if days_remaining <= 0:
-        logging.warning("No days remaining in month.")
+        logging.warning("No days remaining in current month.")
         df_calc["Valor Diário Recomendado"] = ""
         return df_calc
 
+    # --------------------------------------------------
+    # Row calculation
+    # --------------------------------------------------
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
         realizado = br_text_to_float(row["Valor Realizado"])
@@ -236,7 +248,7 @@ def populate_valor_diario_recomendado(df_calc):
 
         restante = meta - realizado
 
-        # Goal already achieved
+        # Meta already achieved
         if restante <= 0:
             return ""
 
