@@ -61,7 +61,7 @@ def read_worksheet_as_df(sheet, worksheet_name):
 
     return pd.DataFrame(rows, columns=headers)
 
-'''def populate_meta_for_testing(df_calc):
+def populate_meta_for_testing(df_calc):
     logging.info("Populating Meta column (TEST MODE)...")
 
     META_BY_CODIGO = {
@@ -73,7 +73,7 @@ def read_worksheet_as_df(sheet, worksheet_name):
     df_calc["Meta"] = df_calc["Código"].map(META_BY_CODIGO).fillna("")
 
     logging.info("Meta column populated for testing.")
-    return df_calc'''
+    return df_calc
 
 def br_text_to_float(value):
     """Convert Brazilian number text to float: 12.345,67 → 12345.67"""
@@ -210,6 +210,48 @@ def populate_progresso(df_calc):
     df_calc["Progresso"] = df_calc.apply(calculate_row, axis=1)
 
     logging.info("Progresso populated.")
+    return df_calc
+
+def populate_valor_diario_recomendado(df_calc):
+    logging.info("Calculating Valor Diário Recomendado...")
+
+    header_dates = get_header_dates()
+    days_remaining = header_dates["days_remaining"]
+
+    if days_remaining <= 0:
+        logging.warning("No days remaining in month.")
+        df_calc["Valor Diário Recomendado"] = ""
+        return df_calc
+
+    def calculate_row(row):
+        meta = br_text_to_float(row["Meta"])
+        realizado = br_text_to_float(row["Valor Realizado"])
+
+        # Guard clauses
+        if meta is None or meta == 0:
+            return ""
+
+        if realizado is None:
+            realizado = 0.0
+
+        restante = meta - realizado
+
+        # Goal already achieved
+        if restante <= 0:
+            return ""
+
+        valor_diario = restante / days_remaining
+
+        return float_to_br_text_2(valor_diario)
+
+    df_calc["Valor Diário Recomendado"] = df_calc.apply(
+        calculate_row, axis=1
+    )
+
+    logging.info(
+        f"Valor Diário Recomendado populated using {days_remaining} remaining days."
+    )
+
     return df_calc
 
 def update_premiacao_from_comissoes(sheet, df_calc):
@@ -510,10 +552,12 @@ def main():
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
-    # df_calc = populate_meta_for_testing(df_calc)
+    df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
     df_calc = populate_progresso(df_calc)
+
+    df_calc = populate_valor_diario_recomendado(df_calc)
 
     df_calc = update_premiacao_from_comissoes(sheet, df_calc)
 
