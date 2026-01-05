@@ -16,11 +16,21 @@ from openpyxl.styles import Font
 # Config logging
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-def get_latest_file(directory='.', extension='xls'):
+'''def get_latest_file(directory='.', extension='xls'):
     files = glob.glob(os.path.join(directory, f'*.{extension}'))
     if not files:
         logging.warning("No files found with the specified extension.")
         return None
+    return max(files, key=os.path.getmtime)'''
+
+def get_latest_file(directory='.'):
+    files = glob.glob(os.path.join(directory, '*.xls')) + \
+            glob.glob(os.path.join(directory, '*.xlsx'))
+
+    if not files:
+        logging.warning("No Excel files found.")
+        return None
+
     return max(files, key=os.path.getmtime)
 
 def retry_api_call(func, retries=3, delay=2):
@@ -35,7 +45,7 @@ def retry_api_call(func, retries=3, delay=2):
                 raise
     raise Exception("Max retries reached.")
 
-def convert_xls_to_xlsx(xls_path):
+'''def convert_xls_to_xlsx(xls_path):
     logging.info("Converting .xls to .xlsx...")
 
     book = xlrd.open_workbook(xls_path)
@@ -51,7 +61,34 @@ def convert_xls_to_xlsx(xls_path):
     wb.save(xlsx_path)
 
     logging.info(f"Converted file saved as: {xlsx_path}")
-    return xlsx_path
+    return xlsx_path'''
+
+def convert_xls_to_xlsx(file_path):
+    if file_path.lower().endswith(".xlsx"):
+        logging.info("File already .xlsx, skipping conversion.")
+        return file_path
+
+    logging.info("Converting real .xls to .xlsx...")
+
+    try:
+        book = xlrd.open_workbook(file_path)
+    except xlrd.biffh.XLRDError:
+        logging.warning("File is not a real .xls. Renaming to .xlsx.")
+        new_path = file_path.replace(".xls", ".xlsx")
+        os.rename(file_path, new_path)
+        return new_path
+
+    sheet = book.sheet_by_index(0)
+    wb = Workbook()
+    ws = wb.active
+
+    for row_idx in range(sheet.nrows):
+        ws.append(sheet.row_values(row_idx))
+
+    new_path = file_path.replace(".xls", ".xlsx")
+    wb.save(new_path)
+
+    return new_path
 
 def format_qtd_vendas(value):
     try:
@@ -150,15 +187,24 @@ def main():
     download_dir = "/home/runner/work/metas/metas/"
     sheet_id = os.getenv("SHEET_ID")
 
-    time.sleep(15)
+    time.sleep(10)
 
-    file_path = get_latest_file(download_dir)
+    '''file_path = get_latest_file(download_dir)
 
     if not file_path:
         logging.warning("No file found to process.")
         return
 
     if file_path.endswith(".xls"):
+        file_path = convert_xls_to_xlsx(file_path)'''
+
+    file_path = get_latest_file(download_dir)
+
+    if not file_path:
+        logging.warning("No file found to process.")
+        return
+    
+    if file_path.lower().endswith(".xls"):
         file_path = convert_xls_to_xlsx(file_path)
 
     logging.info(f"Processing file: {file_path}")
