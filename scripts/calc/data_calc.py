@@ -234,6 +234,118 @@ def br_text_to_float(value):
     except:
         return None
 
+def update_premiacoes_from_comissoes(sheet, df_calc):
+    logging.info("Updating premiações from COMISSOES...")
+
+    df_com = read_worksheet_as_df(sheet, "COMISSOES")
+
+    if df_com.empty:
+        logging.warning("COMISSOES worksheet is empty.")
+        return df_calc
+
+    df_com.columns = df_com.columns.str.strip()
+
+    required_cols = ["Filial", "Código", "Valor Comissão"]
+    for col in required_cols:
+        if col not in df_com.columns:
+            logging.warning(f"Column '{col}' not found in COMISSOES.")
+            return df_calc
+
+    # Normalize keys
+    df_com["Filial_key"] = (
+        df_com["Filial"]
+        .astype(str)
+        .str.strip()
+        .astype(int)
+        .astype(str)
+    )
+
+    df_com["Código_key"] = (
+        df_com["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
+
+    # Keep Valor Comissão as TEXT
+    df_com["Valor Comissão_str"] = df_com["Valor Comissão"].astype(str)
+
+    # Merge
+    df = df_calc.merge(
+        df_com[["Filial_key", "Código_key", "Valor Comissão_str"]],
+        on=["Filial_key", "Código_key"],
+        how="left"
+    )
+
+    # -------------------------------
+    # Calculations
+    # -------------------------------
+    def calculate_row(row):
+        meta = br_text_to_float(row["Meta"])
+        realizado = br_text_to_float(row["Valor Realizado"])
+        comissao_txt = row["Valor Comissão_str"]
+        comissao = br_text_to_float(comissao_txt)
+
+        # Defaults
+        premiacao_acumulada = comissao_txt if comissao is not None else ""
+        premiacao_paga = ""
+        bonus = ""
+        total = ""
+
+        if meta is None or meta == 0 or comissao is None:
+            return pd.Series([
+                premiacao_acumulada, premiacao_paga, bonus, total
+            ])
+
+        if realizado is None:
+            realizado = 0.0
+
+        percentual = realizado / meta
+
+        # Premiação Paga
+        if percentual < 0.80:
+            paga = comissao * 0.5
+        else:
+            paga = comissao
+
+        premiacao_paga = float_to_br_text_2(paga)
+
+        # BONUS
+        bonus_val = 0.0
+        if 1.05 <= percentual < 1.10:
+            bonus_val = 75.0
+        elif percentual >= 1.10:
+            bonus_val = 150.0
+
+        bonus = float_to_br_text_2(bonus_val) if bonus_val > 0 else ""
+
+        # TOTAL
+        total_val = paga + bonus_val
+        total = float_to_br_text_2(total_val)
+
+        return pd.Series([
+            premiacao_acumulada,
+            premiacao_paga,
+            bonus,
+            total
+        ])
+
+    df[[
+        "Premiação Acomul.",
+        "Premiação Paga",
+        "BONUS",
+        "Premiação TOTAL"
+    ]] = df.apply(calculate_row, axis=1)
+
+    # Cleanup
+    df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str"])
+
+    logging.info("Premiações updated successfully.")
+    return df
+
 def populate_progresso(df_calc):
     logging.info("Calculating Progresso (Valor Realizado / Meta)...")
 
@@ -460,7 +572,7 @@ def build_calc_base(df_trier, df_sci):
         .apply(lambda x: x.split("-", 1)[1].strip() if "-" in x else x)
     )
 
-    calc_df = pd.DataFrame({
+    '''calc_df = pd.DataFrame({
         "ID": df["ID"],
         "Filial": df["Filial_calc"],
         "Código": df["Código"],
@@ -472,6 +584,22 @@ def build_calc_base(df_trier, df_sci):
         "Valor Diário Recomendado": "",
         "Função": df["Função_calc"],
         "Premiação": ""
+    })'''
+
+    calc_df = pd.DataFrame({
+        "ID": df["ID"],
+        "Filial": df["Filial_calc"],
+        "Código": df["Código"],
+        "Colaborador": df["Funcionário"],
+        "Meta": "",
+        "Valor Realizado": "",
+        "Valor Restante": "",
+        "Progresso": "",
+        "Função": df["Função_calc"],
+        "Premiação Acomul.": "",
+        "Premiação Paga": "",
+        "BONUS": "",
+        "Premiação TOTAL": ""
     })
 
     # Filter by allowed Funções
@@ -628,9 +756,9 @@ def main():
     df_calc = populate_valor_restante(df_calc)
     df_calc = populate_progresso(df_calc)
 
-    df_calc = populate_valor_diario_recomendado(df_calc)
+    # df_calc = populate_valor_diario_recomendado(df_calc)
 
-    df_calc = update_premiacao_from_comissoes(sheet, df_calc)
+    df_calc = update_premiacoes_from_comissoes(sheet, df_calc)
 
     update_calc_sheet(sheet, df_calc)
 
