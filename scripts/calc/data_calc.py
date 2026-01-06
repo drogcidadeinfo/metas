@@ -61,19 +61,19 @@ def read_worksheet_as_df(sheet, worksheet_name):
 
     return pd.DataFrame(rows, columns=headers)
 
-'''def populate_meta_for_testing(df_calc):
+def populate_meta_for_testing(df_calc):
     logging.info("Populating Meta column (TEST MODE)...")
 
     META_BY_CODIGO = {
-        342: "39351,85",
-        349: "27777,78",
-        225: "39351,85",
+        342: "4000,85",
+        356: "7400,00",
+        225: "10000,85",
     }
 
     df_calc["Meta"] = df_calc["Código"].map(META_BY_CODIGO).fillna("")
 
     logging.info("Meta column populated for testing.")
-    return df_calc'''
+    return df_calc
 
 def br_text_to_float(value):
     """Convert Brazilian number text to float: 12.345,67 → 12345.67"""
@@ -751,7 +751,7 @@ def main():
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
-    # df_calc = populate_meta_for_testing(df_calc)
+    df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
     df_calc = populate_progresso(df_calc)
