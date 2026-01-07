@@ -978,6 +978,8 @@ def main():
 
     excluded_codigos = get_2_meta_codigos(df_2_meta)
 
+    df_vendas_vendedor = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
+
     df_calc = update_valor_realizado_from_vendas(
         df_calc,
         df_vendas_vendedor,
