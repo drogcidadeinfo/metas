@@ -848,24 +848,35 @@ def get_2_meta_codigos(df_2_meta):
     return df_merged'''
 
 def update_valor_realizado_from_vendas(
+    sheet,
     df_calc,
-    df_vendas_vendedor,
     excluded_codigos=None
 ):
-    """
-    Updates Valor Realizado in calc by summing all Valor Vendas
-    per Código, excluding employees present in 2_META.
-    """
+    logging.info("Reading VENDAS_VENDEDOR worksheet...")
 
-    if df_vendas_vendedor.empty:
-        logging.info("VENDAS_VENDEDOR is empty — skipping Valor Realizado update.")
+    df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
+
+    if df_vendas.empty:
+        logging.warning("VENDAS_VENDEDOR is empty.")
         return df_calc
 
     if excluded_codigos is None:
         excluded_codigos = set()
 
+    # Clean column names
+    df_vendas.columns = df_vendas.columns.str.strip()
+
+    required_cols = ["Código", "Valor Vendas"]
+    for col in required_cols:
+        if col not in df_vendas.columns:
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR.")
+            return df_calc
+
+    # -----------------------------
     # Normalize VENDAS_VENDEDOR
-    vendas = df_vendas_vendedor.copy()
+    # -----------------------------
+    vendas = df_vendas.copy()
+
     vendas["Código"] = (
         vendas["Código"]
         .astype(str)
@@ -881,21 +892,28 @@ def update_valor_realizado_from_vendas(
         .astype(float)
     )
 
-    # ❌ Exclude 2_META employees
+    # -----------------------------
+    # Exclude 2_META / afastados
+    # -----------------------------
     before = len(vendas)
     vendas = vendas[~vendas["Código"].isin(excluded_codigos)]
     logging.info(
-        f"VENDAS_VENDEDOR rows excluded due to 2_META: {before - len(vendas)}"
+        f"VENDAS_VENDEDOR rows excluded due to 2_META/AFASTAMENTOS: "
+        f"{before - len(vendas)}"
     )
 
-    # ✅ Aggregate by Código
+    # -----------------------------
+    # Aggregate by Código
+    # -----------------------------
     vendas_agg = (
         vendas
         .groupby("Código", as_index=False)["Valor Vendas"]
         .sum()
     )
 
+    # -----------------------------
     # Normalize calc side
+    # -----------------------------
     df_calc["Código"] = (
         df_calc["Código"]
         .astype(str)
@@ -903,14 +921,18 @@ def update_valor_realizado_from_vendas(
         .str.strip()
     )
 
+    # -----------------------------
     # Merge aggregation
+    # -----------------------------
     df_calc = df_calc.merge(
         vendas_agg,
         on="Código",
         how="left"
     )
 
+    # -----------------------------
     # Update Valor Realizado
+    # -----------------------------
     df_calc["Valor Realizado"] = (
         df_calc["Valor Vendas"]
         .fillna(0)
