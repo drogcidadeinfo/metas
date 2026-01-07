@@ -747,6 +747,7 @@ def build_calc_base(df_trier, df_sci):
     ALLOWED_FUNCOES = {
         "FARMACEUTICO",
         "OPERADOR DE CAIXA",
+        "OPERADORA DE CAIXA",
         "GERENTE",
         "GERENTE FARMACEUTICO",
         "PROMOTOR DE VENDAS",
