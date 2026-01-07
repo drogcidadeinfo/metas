@@ -242,7 +242,6 @@ def apply_afastamentos(df_calc, df_afast):
 
     return df_calc
 
-
 def read_existing_meta(sheet):
     """
     Reads existing calc sheet and returns {ID: Meta}
@@ -881,6 +880,8 @@ def main():
 
     df_2_meta = read_2_meta(sheet)
     df_calc = apply_2_meta_overrides(df_calc, df_2_meta)
+
+    df_afast = read_afastamentos(sheet)
     df_calc = apply_afastamentos(df_calc, df_afast)
     
     # Restore Meta AFTER rebuilding
