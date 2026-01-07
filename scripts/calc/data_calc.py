@@ -848,7 +848,7 @@ def get_2_meta_codigos(df_2_meta):
 
     return df_merged'''
 
-def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
+'''def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
     """
     Sum Valor Vendas across all stores for each Código in VENDAS_VENDEDOR,
     excluding Códigos from 2_META sheet.
@@ -925,6 +925,154 @@ def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
     
     logging.info(f"Updated Valor Realizado for {len(grouped)} unique Códigos "
                  f"(excluded {len(excluded_codigos)} from 2_META).")
+    
+    return df_merged'''
+
+def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
+    """
+    Update Valor Realizado from VENDAS_VENDEDOR with different logic:
+    1. For regular employees (NOT in 2_META): Sum Valor Vendas across all stores by Código
+    2. For 2_META employees: Get Valor Vendas based on specific Filial+Código combination
+    """
+    logging.info("Reading VENDAS_VENDEDOR worksheet for Valor Realizado...")
+    
+    df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
+    
+    if df_vendas.empty:
+        logging.warning("VENDAS_VENDEDOR is empty.")
+        return df_calc
+    
+    # Clean column names
+    df_vendas.columns = df_vendas.columns.str.strip()
+    
+    required_cols = ["Filial", "Código", "Valor Vendas"]
+    for col in required_cols:
+        if col not in df_vendas.columns:
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR.")
+            return df_calc
+    
+    # Normalize keys
+    df_vendas["Filial_key"] = (
+        df_vendas["Filial"]
+        .astype(str)
+        .str.upper()
+        .str.replace("F", "", regex=False)
+        .str.strip()
+    )
+    
+    df_vendas["Código_key"] = (
+        df_vendas["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+    
+    # Create composite key for matching
+    df_vendas["Filial_Código_key"] = (
+        df_vendas["Filial_key"] + "_" + df_vendas["Código_key"]
+    )
+    
+    # Convert Valor Vendas from Brazilian text to float
+    def safe_convert(value):
+        if pd.isna(value) or value == "":
+            return 0.0
+        return br_text_to_float(str(value)) or 0.0
+    
+    df_vendas["Valor Vendas_float"] = df_vendas["Valor Vendas"].apply(safe_convert)
+    
+    # Prepare df_calc for matching
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
+    df_calc["Filial_Código_key"] = df_calc["Filial_key"] + "_" + df_calc["Código_key"]
+    
+    # Create a copy of df_calc to work with
+    df_merged = df_calc.copy()
+    
+    # Step 1: Process 2_META employees (Filial+Código specific)
+    # Identify which rows in df_calc are 2_META employees
+    df_calc["Is_2_META"] = df_calc["Código_key"].isin(excluded_codigos)
+    
+    # For 2_META employees: match by Filial+Código
+    if df_calc["Is_2_META"].any():
+        logging.info(f"Processing {df_calc['Is_2_META'].sum()} 2_META employees with Filial+Código matching")
+        
+        # Get 2_META rows
+        df_2meta = df_calc[df_calc["Is_2_META"]].copy()
+        
+        # Find exact Filial+Código matches in VENDAS_VENDEDOR
+        vendas_for_2meta = df_vendas[df_vendas["Filial_Código_key"].isin(df_2meta["Filial_Código_key"])]
+        
+        if not vendas_for_2meta.empty:
+            # Group by Filial+Código (in case there are multiple entries for same combination)
+            grouped_2meta = vendas_for_2meta.groupby("Filial_Código_key")["Valor Vendas_float"].sum().reset_index()
+            grouped_2meta = grouped_2meta.rename(columns={"Valor Vendas_float": "Valor_Vendas_Total"})
+            
+            # Merge with 2_META rows
+            df_2meta_merged = df_2meta.merge(
+                grouped_2meta,
+                on="Filial_Código_key",
+                how="left"
+            )
+            
+            # Convert to Brazilian text format
+            df_2meta_merged["Valor Realizado"] = df_2meta_merged["Valor_Vendas_Total"].apply(
+                lambda x: float_to_br_text_2(x) if pd.notna(x) and x != 0 else ""
+            )
+            
+            # Update the original df_calc with 2_META results
+            df_merged.loc[df_merged["Is_2_META"], "Valor Realizado"] = df_2meta_merged.set_index("Filial_Código_key")["Valor Realizado"]
+    
+    # Step 2: Process regular employees (NOT in 2_META) - sum across all stores by Código
+    df_regular = df_calc[~df_calc["Is_2_META"]].copy()
+    
+    if not df_regular.empty:
+        logging.info(f"Processing {len(df_regular)} regular employees with Código-only summing")
+        
+        # Get all VENDAS rows for regular employees' Códigos
+        regular_codigos = set(df_regular["Código_key"].unique())
+        vendas_for_regular = df_vendas[df_vendas["Código_key"].isin(regular_codigos)]
+        
+        if not vendas_for_regular.empty:
+            # Group by Código and sum across all stores
+            grouped_regular = vendas_for_regular.groupby("Código_key")["Valor Vendas_float"].sum().reset_index()
+            grouped_regular = grouped_regular.rename(columns={
+                "Código_key": "Código_calc",
+                "Valor Vendas_float": "Valor_Vendas_Total"
+            })
+            
+            # Normalize calc Código for merging
+            df_regular["Código_calc"] = df_regular["Código_key"]
+            
+            # Merge totals into regular employees
+            df_regular_merged = df_regular.merge(
+                grouped_regular,
+                on="Código_calc",
+                how="left"
+            )
+            
+            # Convert to Brazilian text format
+            df_regular_merged["Valor Realizado"] = df_regular_merged["Valor_Vendas_Total"].apply(
+                lambda x: float_to_br_text_2(x) if pd.notna(x) and x != 0 else ""
+            )
+            
+            # Update the original df_merged with regular results
+            # We need to match by both Filial and Código to ensure correct placement
+            for idx, row in df_regular_merged.iterrows():
+                mask = (df_merged["Filial_key"] == row["Filial_key"]) & \
+                       (df_merged["Código_key"] == row["Código_key"]) & \
+                       (~df_merged["Is_2_META"])
+                
+                if mask.any():
+                    df_merged.loc[mask, "Valor Realizado"] = row["Valor Realizado"]
+    
+    # Cleanup
+    df_merged = df_merged.drop(columns=[
+        "Filial_key", "Código_key", "Filial_Código_key", "Is_2_META"
+    ])
+    
+    logging.info(f"Updated Valor Realizado for all employees.")
+    logging.info(f"2_META employees matched by Filial+Código")
+    logging.info(f"Regular employees summed across all stores by Código")
     
     return df_merged
     
