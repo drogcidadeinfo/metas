@@ -787,7 +787,7 @@ def get_2_meta_codigos(df_2_meta):
         .unique()
     )
 
-def update_valor_realizado_from_vendas(sheet, df_calc):
+'''def update_valor_realizado_from_vendas(sheet, df_calc):
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
 
     df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
@@ -845,6 +845,86 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
 
     logging.info(f"Copied Valor Realizado for {mask.sum()} rows (TEXT mode).")
 
+    return df_merged'''
+
+def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
+    """
+    Sum Valor Vendas across all stores for each Código in VENDAS_VENDEDOR,
+    excluding Códigos from 2_META sheet.
+    """
+    logging.info("Reading VENDAS_VENDEDOR worksheet for Valor Realizado...")
+    
+    df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
+    
+    if df_vendas.empty:
+        logging.warning("VENDAS_VENDEDOR is empty.")
+        return df_calc
+    
+    # Clean column names
+    df_vendas.columns = df_vendas.columns.str.strip()
+    
+    required_cols = ["Código", "Valor Vendas"]
+    for col in required_cols:
+        if col not in df_vendas.columns:
+            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR.")
+            return df_calc
+    
+    # Normalize Código keys
+    df_vendas["Código_key"] = (
+        df_vendas["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+    
+    # Convert Valor Vendas from Brazilian text to float for summing
+    def safe_convert(value):
+        if pd.isna(value) or value == "":
+            return 0.0
+        return br_text_to_float(str(value)) or 0.0
+    
+    df_vendas["Valor Vendas_float"] = df_vendas["Valor Vendas"].apply(safe_convert)
+    
+    # Filter out excluded Códigos (from 2_META)
+    mask = ~df_vendas["Código_key"].isin(excluded_codigos)
+    df_filtered = df_vendas[mask].copy()
+    
+    if len(df_filtered) == 0:
+        logging.info("No VENDAS_VENDEDOR rows after filtering 2_META Códigos.")
+        return df_calc
+    
+    # Group by Código and sum Valor Vendas across all stores
+    grouped = df_filtered.groupby("Código_key")["Valor Vendas_float"].sum().reset_index()
+    grouped = grouped.rename(columns={
+        "Código_key": "Código_calc",
+        "Valor Vendas_float": "Valor_Vendas_Total"
+    })
+    
+    # Normalize calc Código for merging
+    df_calc["Código_calc"] = df_calc["Código"].astype(str).str.strip()
+    
+    # Merge totals into calc
+    df_merged = df_calc.merge(
+        grouped,
+        on="Código_calc",
+        how="left"
+    )
+    
+    # Convert total back to Brazilian text format
+    def total_to_br_text(total):
+        if pd.isna(total) or total == 0:
+            return ""
+        return float_to_br_text_2(total)
+    
+    # Update Valor Realizado with the summed total
+    df_merged["Valor Realizado"] = df_merged["Valor_Vendas_Total"].apply(total_to_br_text)
+    
+    # Cleanup
+    df_merged = df_merged.drop(columns=["Código_calc", "Valor_Vendas_Total"])
+    
+    logging.info(f"Updated Valor Realizado for {len(grouped)} unique Códigos "
+                 f"(excluded {len(excluded_codigos)} from 2_META).")
+    
     return df_merged
     
 # --------------------------------------------------
@@ -915,7 +995,8 @@ def main():
     )
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
-    df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
+    # df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
+    df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
     # df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
