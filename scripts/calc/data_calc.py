@@ -967,6 +967,9 @@ def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
         .str.strip()
     )
     
+    # Create composite key in VENDAS
+    df_vendas["Filial_Código_key"] = df_vendas["Filial_key"] + "_" + df_vendas["Código_key"]
+    
     # Convert Valor Vendas
     def safe_convert(value):
         if pd.isna(value) or value == "":
@@ -975,60 +978,76 @@ def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
     
     df_vendas["Valor Vendas_float"] = df_vendas["Valor Vendas"].apply(safe_convert)
     
-    # Prepare df_calc
+    # Prepare df_calc - add all necessary columns to the main dataframe
     df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
     df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
     df_calc["Is_2_META"] = df_calc["Código_key"].isin(excluded_codigos)
+    # Create composite key in df_calc too
+    df_calc["Filial_Código_key"] = df_calc["Filial_key"] + "_" + df_calc["Código_key"]
     
     # Start with empty Valor Realizado column
     result_df = df_calc.copy()
     result_df["Valor Realizado"] = ""
     
     # Process 2_META employees: Filial+Código specific
-    df_2meta = df_calc[df_calc["Is_2_META"]].copy()
+    df_2meta = result_df[result_df["Is_2_META"]].copy()
     if not df_2meta.empty:
-        # Create composite key for 2_META
-        df_2meta["Filial_Código_key"] = df_2meta["Filial_key"] + "_" + df_2meta["Código_key"]
-        df_vendas["Filial_Código_key"] = df_vendas["Filial_key"] + "_" + df_vendas["Código_key"]
+        logging.info(f"Processing {len(df_2meta)} 2_META employees with Filial+Código matching")
         
         # Get sales for 2_META's specific Filial+Código combinations
         vendas_2meta = df_vendas[df_vendas["Filial_Código_key"].isin(df_2meta["Filial_Código_key"])]
         
         if not vendas_2meta.empty:
+            logging.info(f"Found {len(vendas_2meta)} VENDAS rows for 2_META employees")
+            
             # Group by specific Filial+Código
             grouped_2meta = vendas_2meta.groupby("Filial_Código_key")["Valor Vendas_float"].sum().reset_index()
             
-            # Map back to 2_META employees
-            for _, row in grouped_2meta.iterrows():
-                mask = (result_df["Filial_Código_key"] == row["Filial_Código_key"]) & result_df["Is_2_META"]
-                if mask.any():
-                    result_df.loc[mask, "Valor Realizado"] = float_to_br_text_2(row["Valor Vendas_float"])
+            # Create a mapping dictionary for faster lookup
+            vendas_map_2meta = dict(zip(grouped_2meta["Filial_Código_key"], grouped_2meta["Valor Vendas_float"]))
+            
+            # Update Valor Realizado for 2_META employees
+            for idx, row in result_df[result_df["Is_2_META"]].iterrows():
+                composite_key = row["Filial_Código_key"]
+                if composite_key in vendas_map_2meta:
+                    result_df.at[idx, "Valor Realizado"] = float_to_br_text_2(vendas_map_2meta[composite_key])
+        else:
+            logging.info("No VENDAS rows found for 2_META employees")
     
     # Process regular employees: Sum across all stores
-    df_regular = df_calc[~df_calc["Is_2_META"]].copy()
+    df_regular = result_df[~result_df["Is_2_META"]].copy()
     if not df_regular.empty:
+        logging.info(f"Processing {len(df_regular)} regular employees with Código-only summing")
+        
         # Get all sales for regular employees' Códigos
         regular_codigos = set(df_regular["Código_key"].unique())
         vendas_regular = df_vendas[df_vendas["Código_key"].isin(regular_codigos)]
         
         if not vendas_regular.empty:
+            logging.info(f"Found {len(vendas_regular)} VENDAS rows for regular employees")
+            
             # Sum across all stores for each Código
             grouped_regular = vendas_regular.groupby("Código_key")["Valor Vendas_float"].sum().reset_index()
             
-            # Map to regular employees
-            for _, row in grouped_regular.iterrows():
-                mask = (result_df["Código_key"] == row["Código_key"]) & ~result_df["Is_2_META"]
-                if mask.any():
-                    result_df.loc[mask, "Valor Realizado"] = float_to_br_text_2(row["Valor Vendas_float"])
+            # Create a mapping dictionary for faster lookup
+            vendas_map_regular = dict(zip(grouped_regular["Código_key"], grouped_regular["Valor Vendas_float"]))
+            
+            # Update Valor Realizado for regular employees
+            for idx, row in result_df[~result_df["Is_2_META"]].iterrows():
+                codigo_key = row["Código_key"]
+                if codigo_key in vendas_map_regular:
+                    result_df.at[idx, "Valor Realizado"] = float_to_br_text_2(vendas_map_regular[codigo_key])
+        else:
+            logging.info("No VENDAS rows found for regular employees")
     
-    # Cleanup
+    # Cleanup - remove temporary columns
     result_df = result_df.drop(columns=[
         "Filial_key", "Código_key", "Is_2_META", "Filial_Código_key"
     ])
     
     logging.info(f"Updated Valor Realizado:")
-    logging.info(f"  - 2_META employees: {df_2meta.shape[0]} (Filial-specific)")
-    logging.info(f"  - Regular employees: {df_regular.shape[0]} (summed across all stores)")
+    logging.info(f"  - 2_META employees: {len(df_2meta)} (Filial-specific)")
+    logging.info(f"  - Regular employees: {len(df_regular)} (summed across all stores)")
     
     return result_df
     
