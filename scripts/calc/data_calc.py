@@ -914,7 +914,7 @@ def update_valor_realizado_from_vendas(
     df_calc["Valor Realizado"] = (
         df_calc["Valor Vendas"]
         .fillna(0)
-        .map(br_float_to_text)
+        .map(float_to_br_text)
     )
 
     df_calc = df_calc.drop(columns="Valor Vendas")
