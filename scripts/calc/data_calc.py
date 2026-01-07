@@ -123,38 +123,49 @@ def read_2_meta(sheet):
 
 def apply_2_meta_overrides(df_calc, df_2_meta):
     """
-    Adds extra rows to df_calc based on 2_META rules.
+    Adds extra rows to df_calc based on 2_META rules,
+    using ID as the primary key.
     """
     if df_2_meta.empty:
         return df_calc
 
     logging.info(f"Applying 2_META overrides ({len(df_2_meta)} rows)...")
 
+    # Normalize calc
+    df_calc["ID"] = df_calc["ID"].astype(str).str.strip()
+    df_calc["Código"] = (
+        df_calc["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
     new_rows = []
 
     for _, row in df_2_meta.iterrows():
         filial = str(row["Filial"]).strip()
         codigo = str(row["Código"]).replace(".0", "").strip()
-        colaborador = str(row["Colaborador"]).strip().upper()
+        target_id = str(row["ID"]).strip()
 
-        # Find base row (same Código + Colaborador)
-        base = df_calc[
-            (df_calc["Código"].astype(str) == codigo) &
-            (df_calc["Colaborador"].str.upper() == colaborador)
-        ]
+        # 1️⃣ If ID already exists → nothing to do
+        if target_id in df_calc["ID"].values:
+            continue
+
+        # 2️⃣ Find any base row by Código
+        base = df_calc[df_calc["Código"] == codigo]
 
         if base.empty:
             logging.warning(
-                f"2_META entry not found in calc base: "
-                f"{colaborador} / Código {codigo}"
+                f"2_META base not found for Código {codigo} "
+                f"(cannot create ID {target_id})"
             )
             continue
 
         base_row = base.iloc[0].copy()
 
-        # Override Filial + ID
+        # 3️⃣ Override
         base_row["Filial"] = int(filial)
-        base_row["ID"] = f"{filial}{codigo}"
+        base_row["ID"] = target_id
 
         new_rows.append(base_row)
 
@@ -166,6 +177,71 @@ def apply_2_meta_overrides(df_calc, df_2_meta):
 
     logging.info(f"2_META rows added: {len(new_rows)}")
     return df_calc
+
+def read_afastamentos(sheet):
+    try:
+        df = read_worksheet_as_df(sheet, "AFASTAMENTOS")
+    except gspread.exceptions.WorksheetNotFound:
+        logging.info("AFASTAMENTOS sheet not found — skipping.")
+        return pd.DataFrame()
+
+    if df.empty:
+        logging.info("AFASTAMENTOS is empty — skipping.")
+        return pd.DataFrame()
+
+    df.columns = df.columns.str.strip()
+
+    required = {"Filial", "Colaborador"}
+    if not required.issubset(df.columns):
+        logging.warning("AFASTAMENTOS missing required columns.")
+        return pd.DataFrame()
+
+    # Normalize
+    df["Filial"] = df["Filial"].astype(str).str.strip()
+    df["Colaborador"] = (
+        df["Colaborador"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    return df
+    
+def apply_afastamentos(df_calc, df_afast):
+    """
+    Removes rows from df_calc based on AFASTAMENTOS (Filial + Colaborador).
+    """
+    if df_afast.empty:
+        return df_calc
+
+    logging.info(f"Applying AFASTAMENTOS ({len(df_afast)} rows)...")
+
+    # Normalize calc side
+    df_calc["Filial"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Colaborador"] = (
+        df_calc["Colaborador"]
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+
+    before = len(df_calc)
+
+    df_calc = df_calc.merge(
+        df_afast.assign(_remove=1),
+        on=["Filial", "Colaborador"],
+        how="left"
+    )
+
+    removed = df_calc["_remove"].sum(skipna=True)
+
+    df_calc = df_calc[df_calc["_remove"].isna()].drop(columns="_remove")
+
+    logging.info(f"AFASTAMENTOS rows removed: {int(removed)} "
+                 f"(from {before} → {len(df_calc)})")
+
+    return df_calc
+
 
 def read_existing_meta(sheet):
     """
@@ -805,6 +881,7 @@ def main():
 
     df_2_meta = read_2_meta(sheet)
     df_calc = apply_2_meta_overrides(df_calc, df_2_meta)
+    df_calc = apply_afastamentos(df_calc, df_afast)
     
     # Restore Meta AFTER rebuilding
     df_calc = restore_meta(df_calc, existing_meta)
