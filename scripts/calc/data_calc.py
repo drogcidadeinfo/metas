@@ -140,7 +140,6 @@ def apply_2_meta_overrides(df_calc, df_2_meta):
         # Find base row (same Código + Colaborador)
         base = df_calc[
             (df_calc["Código"].astype(str) == codigo) &
-            (df_calc["Colaborador"].str.upper() == colaborador)
         ]
 
         if base.empty:
