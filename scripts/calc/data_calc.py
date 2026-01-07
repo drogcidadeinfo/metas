@@ -114,7 +114,7 @@ def read_2_meta(sheet):
 
     df.columns = df.columns.str.strip()
 
-    required = {"Filial", "Código", "Colaborador"}
+    required = {"ID", "Filial", "Código", "Colaborador"}
     if not required.issubset(df.columns):
         logging.warning("2_META missing required columns.")
         return pd.DataFrame()
