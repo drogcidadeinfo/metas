@@ -771,7 +771,23 @@ def build_calc_base(df_trier, df_sci):
 # --------------------------------------------------
 # Step 2: Copy Valor Vendas → Valor Realizado AS TEXT
 # --------------------------------------------------
-def update_valor_realizado_from_vendas(sheet, df_calc):
+def get_2_meta_codigos(df_2_meta):
+    """
+    Returns a set of Código values that must be excluded
+    from Valor Realizado aggregation.
+    """
+    if df_2_meta.empty or "Código" not in df_2_meta.columns:
+        return set()
+
+    return set(
+        df_2_meta["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+        .unique()
+    )
+
+'''def update_valor_realizado_from_vendas(sheet, df_calc):
     logging.info("Reading VENDAS_VENDEDOR worksheet...")
 
     df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
@@ -829,7 +845,83 @@ def update_valor_realizado_from_vendas(sheet, df_calc):
 
     logging.info(f"Copied Valor Realizado for {mask.sum()} rows (TEXT mode).")
 
-    return df_merged
+    return df_merged'''
+
+def update_valor_realizado_from_vendas(
+    df_calc,
+    df_vendas_vendedor,
+    excluded_codigos=None
+):
+    """
+    Updates Valor Realizado in calc by summing all Valor Vendas
+    per Código, excluding employees present in 2_META.
+    """
+
+    if df_vendas_vendedor.empty:
+        logging.info("VENDAS_VENDEDOR is empty — skipping Valor Realizado update.")
+        return df_calc
+
+    if excluded_codigos is None:
+        excluded_codigos = set()
+
+    # Normalize VENDAS_VENDEDOR
+    vendas = df_vendas_vendedor.copy()
+    vendas["Código"] = (
+        vendas["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    vendas["Valor Vendas"] = (
+        vendas["Valor Vendas"]
+        .astype(str)
+        .str.replace(".", "", regex=False)
+        .str.replace(",", ".", regex=False)
+        .astype(float)
+    )
+
+    # ❌ Exclude 2_META employees
+    before = len(vendas)
+    vendas = vendas[~vendas["Código"].isin(excluded_codigos)]
+    logging.info(
+        f"VENDAS_VENDEDOR rows excluded due to 2_META: {before - len(vendas)}"
+    )
+
+    # ✅ Aggregate by Código
+    vendas_agg = (
+        vendas
+        .groupby("Código", as_index=False)["Valor Vendas"]
+        .sum()
+    )
+
+    # Normalize calc side
+    df_calc["Código"] = (
+        df_calc["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    # Merge aggregation
+    df_calc = df_calc.merge(
+        vendas_agg,
+        on="Código",
+        how="left"
+    )
+
+    # Update Valor Realizado
+    df_calc["Valor Realizado"] = (
+        df_calc["Valor Vendas"]
+        .fillna(0)
+        .map(br_float_to_text)
+    )
+
+    df_calc = df_calc.drop(columns="Valor Vendas")
+
+    logging.info("Valor Realizado updated using aggregated sales by Código.")
+
+    return df_calc
     
 # --------------------------------------------------
 # Write to calc worksheet
@@ -883,6 +975,14 @@ def main():
 
     df_afast = read_afastamentos(sheet)
     df_calc = apply_afastamentos(df_calc, df_afast)
+
+    excluded_codigos = get_2_meta_codigos(df_2_meta)
+
+    df_calc = update_valor_realizado_from_vendas(
+        df_calc,
+        df_vendas_vendedor,
+        excluded_codigos
+    )
     
     # Restore Meta AFTER rebuilding
     df_calc = restore_meta(df_calc, existing_meta)
