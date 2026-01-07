@@ -101,6 +101,72 @@ def float_to_br_text(value):
 
 import math
 
+def read_2_meta(sheet):
+    try:
+        df = read_worksheet_as_df(sheet, "2_META")
+    except gspread.exceptions.WorksheetNotFound:
+        logging.info("2_META sheet not found — skipping.")
+        return pd.DataFrame()
+
+    if df.empty:
+        logging.info("2_META is empty — skipping.")
+        return pd.DataFrame()
+
+    df.columns = df.columns.str.strip()
+
+    required = {"Filial", "Código", "Colaborador"}
+    if not required.issubset(df.columns):
+        logging.warning("2_META missing required columns.")
+        return pd.DataFrame()
+
+    return df
+
+def apply_2_meta_overrides(df_calc, df_2_meta):
+    """
+    Adds extra rows to df_calc based on 2_META rules.
+    """
+    if df_2_meta.empty:
+        return df_calc
+
+    logging.info(f"Applying 2_META overrides ({len(df_2_meta)} rows)...")
+
+    new_rows = []
+
+    for _, row in df_2_meta.iterrows():
+        filial = str(row["Filial"]).strip()
+        codigo = str(row["Código"]).replace(".0", "").strip()
+        colaborador = str(row["Colaborador"]).strip().upper()
+
+        # Find base row (same Código + Colaborador)
+        base = df_calc[
+            (df_calc["Código"].astype(str) == codigo) &
+            (df_calc["Colaborador"].str.upper() == colaborador)
+        ]
+
+        if base.empty:
+            logging.warning(
+                f"2_META entry not found in calc base: "
+                f"{colaborador} / Código {codigo}"
+            )
+            continue
+
+        base_row = base.iloc[0].copy()
+
+        # Override Filial + ID
+        base_row["Filial"] = int(filial)
+        base_row["ID"] = f"{filial}{codigo}"
+
+        new_rows.append(base_row)
+
+    if new_rows:
+        df_calc = pd.concat(
+            [df_calc, pd.DataFrame(new_rows)],
+            ignore_index=True
+        )
+
+    logging.info(f"2_META rows added: {len(new_rows)}")
+    return df_calc
+
 def read_existing_meta(sheet):
     """
     Reads existing calc sheet and returns {ID: Meta}
@@ -736,6 +802,9 @@ def main():
     existing_meta = read_existing_meta(sheet)
     
     df_calc = build_calc_base(df_trier, df_sci)
+
+    df_2_meta = read_2_meta(sheet)
+    df_calc = apply_2_meta_overrides(df_calc, df_2_meta)
     
     # Restore Meta AFTER rebuilding
     df_calc = restore_meta(df_calc, existing_meta)
