@@ -424,7 +424,7 @@ def read_trainees(sheet):
     
     return df
 
-def update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees):
+'''def update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees):
     """
     Update Premiação Paga, BONUS, and Premiação TOTAL for:
     1. All rows where FUNÇÃO is GERENTE, SUBGERENTE, or GERENTE FARMACEUTICO
@@ -542,6 +542,112 @@ def read_2_meta(sheet):
         logging.warning("2_META missing required columns.")
         return pd.DataFrame()
 
+    return df'''
+
+def update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees):
+    """
+    Update Premiação columns for managers and trainees:
+    1. For GERENTE, SUBGERENTE, GERENTE FARMACEUTICO:
+       - Premiação TOTAL = sum from META_GERENTE
+       - Clear Premiação Acomul., Premiação Paga, BONUS
+    2. For TRAINEES (matched by ID):
+       - Keep their existing Premiação Paga and BONUS (from COMISSOES calculation)
+       - Add META_GERENTE sum to Premiação TOTAL
+    """
+    if df_meta_gerente.empty:
+        logging.warning("META_GERENTE sheet is empty. Cannot update gerente premiação.")
+        return df_calc
+    
+    # Create a copy to avoid modifying the original
+    df = df_calc.copy()
+    
+    # Normalize df_meta_gerente Filial for matching
+    df_meta_gerente = df_meta_gerente.copy()
+    df_meta_gerente["Filial_key"] = (
+        df_meta_gerente["Filial"]
+        .astype(str)
+        .str.strip()
+    )
+    
+    # Create a mapping from Filial to total premiação
+    filial_premiacao_map = {}
+    
+    for _, row in df_meta_gerente.iterrows():
+        filial = str(row["Filial_key"])
+        total = 0.0
+        
+        # Sum all premiação columns
+        columns_to_sum = ["Fat. Líquido", "CMV", "HB", "TKT Médio", "% Premiação Total"]
+        
+        for col in columns_to_sum:
+            if col in row:
+                value = br_text_to_float(row[col])
+                if value is not None:
+                    total += value
+        
+        filial_premiacao_map[filial] = total
+    
+    logging.info(f"Created premiação mapping for {len(filial_premiacao_map)} Filials")
+    
+    # Get list of IDs from TRAINEES sheet
+    trainee_ids = set()
+    if not df_trainees.empty:
+        trainee_ids = set(df_trainees["ID"].astype(str).str.strip().unique())
+        logging.info(f"Found {len(trainee_ids)} unique trainee IDs")
+    
+    # Normalize df columns
+    df["ID_key"] = df["ID"].astype(str).str.strip()
+    df["Filial_key"] = df["Filial"].astype(str).str.strip()
+    
+    # Define which functions should be treated as managers (only these get cleared)
+    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
+    
+    # Identify and update rows
+    manager_rows_updated = 0
+    trainee_rows_updated = 0
+    
+    for idx, row in df.iterrows():
+        filial = row["Filial_key"]
+        
+        if filial not in filial_premiacao_map:
+            continue
+        
+        meta_gerente_total = filial_premiacao_map[filial]
+        funcao = str(row.get("Função", "")).strip().upper()
+        is_trainee = row["ID_key"] in trainee_ids
+        
+        # For managers (not trainees)
+        if funcao in manager_funcoes and not is_trainee:
+            # Set Premiação TOTAL from META_GERENTE
+            df.at[idx, "Premiação TOTAL"] = float_to_br_text_2(meta_gerente_total)
+            
+            # Clear other premiação columns
+            df.at[idx, "Premiação Acomul."] = ""
+            df.at[idx, "Premiação Paga"] = ""
+            df.at[idx, "BONUS"] = ""
+            
+            manager_rows_updated += 1
+            
+        # For trainees (regardless of function)
+        elif is_trainee:
+            # Get existing Premiação TOTAL (from COMISSOES calculation)
+            existing_total = br_text_to_float(row.get("Premiação TOTAL", ""))
+            if existing_total is None:
+                existing_total = 0.0
+            
+            # Add META_GERENTE total to existing total
+            new_total = existing_total + meta_gerente_total
+            df.at[idx, "Premiação TOTAL"] = float_to_br_text_2(new_total)
+            
+            # Keep Premiação Paga and BONUS as-is (from COMISSOES)
+            # Only Premiação TOTAL gets updated
+            
+            trainee_rows_updated += 1
+    
+    # Clean up temporary columns
+    df = df.drop(columns=["ID_key", "Filial_key"])
+    
+    logging.info(f"Updated {manager_rows_updated} manager rows and {trainee_rows_updated} trainee rows")
     return df
 
 def apply_2_meta_overrides(df_calc, df_2_meta):
@@ -908,7 +1014,7 @@ def br_text_to_float(value):
     df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str"])
 
     logging.info("Premiações updated successfully.")
-    return df'''
+    return df
 
 def update_premiacoes_from_comissoes(sheet, df_calc):
     logging.info("Updating premiações from COMISSOES...")
@@ -1027,6 +1133,145 @@ def update_premiacoes_from_comissoes(sheet, df_calc):
 
     # Cleanup
     df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str"])
+
+    logging.info("Premiações updated successfully.")
+    return df'''
+
+def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
+    """
+    Update premiações from COMISSOES for all rows EXCEPT managers.
+    For trainees, calculate normally but don't set Premiação TOTAL yet
+    (it will be added to later by update_gerente_premiacao).
+    """
+    logging.info("Updating premiações from COMISSOES...")
+
+    df_com = read_worksheet_as_df(sheet, "COMISSOES")
+
+    if df_com.empty:
+        logging.warning("COMISSOES worksheet is empty.")
+        return df_calc
+
+    df_com.columns = df_com.columns.str.strip()
+
+    required_cols = ["Filial", "Código", "Valor Comissão"]
+    for col in required_cols:
+        if col not in df_com.columns:
+            logging.warning(f"Column '{col}' not found in COMISSOES.")
+            return df_calc
+
+    # Get list of IDs from TRAINEES sheet
+    trainee_ids = set()
+    if not df_trainees.empty:
+        trainee_ids = set(df_trainees["ID"].astype(str).str.strip().unique())
+
+    # Define which functions are managers
+    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
+
+    # Normalize keys
+    df_com["Filial_key"] = (
+        df_com["Filial"]
+        .astype(str)
+        .str.strip()
+        .astype(int)
+        .astype(str)
+    )
+
+    df_com["Código_key"] = (
+        df_com["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
+
+    # Keep Valor Comissão as TEXT
+    df_com["Valor Comissão_str"] = df_com["Valor Comissão"].astype(str)
+
+    # Merge
+    df = df_calc.merge(
+        df_com[["Filial_key", "Código_key", "Valor Comissão_str"]],
+        on=["Filial_key", "Código_key"],
+        how="left"
+    )
+
+    # -------------------------------
+    # Calculations
+    # -------------------------------
+    def calculate_row(row, is_manager, is_trainee):
+        # Skip managers completely
+        if is_manager and not is_trainee:
+            return pd.Series([
+                "", "", "", ""  # Keep everything empty for managers
+            ])
+        
+        meta = br_text_to_float(row["Meta"])
+        realizado = br_text_to_float(row["Valor Realizado"])
+        comissao_txt = row["Valor Comissão_str"]
+        comissao = br_text_to_float(comissao_txt)
+
+        # Defaults
+        premiacao_acumulada = comissao_txt if comissao is not None else ""
+        premiacao_paga = ""
+        bonus = ""
+        total = ""
+
+        if meta is None or meta == 0 or comissao is None:
+            return pd.Series([
+                premiacao_acumulada, premiacao_paga, bonus, total
+            ])
+
+        if realizado is None:
+            realizado = 0.0
+
+        percentual = realizado / meta
+
+        # Premiação Paga
+        if percentual < 0.80:
+            paga = comissao * 0.5
+        else:
+            paga = comissao
+
+        premiacao_paga = float_to_br_text_2(paga)
+
+        # BONUS
+        bonus_val = 0.0
+        if 1.05 <= percentual < 1.10:
+            bonus_val = 75.0
+        elif percentual >= 1.10:
+            bonus_val = 150.0
+
+        bonus = float_to_br_text_2(bonus_val) if bonus_val > 0 else ""
+
+        # TOTAL - calculate for everyone (will be overridden for managers)
+        total_val = paga + bonus_val
+        total = float_to_br_text_2(total_val)
+
+        return pd.Series([
+            premiacao_acumulada,
+            premiacao_paga,
+            bonus,
+            total
+        ])
+
+    # Determine which rows are managers and which are trainees
+    df["is_manager"] = df["Função"].astype(str).str.strip().str.upper().isin(manager_funcoes)
+    df["is_trainee"] = df["ID"].astype(str).str.strip().isin(trainee_ids)
+    
+    # Apply calculations to all rows
+    df[[
+        "Premiação Acomul.",
+        "Premiação Paga",
+        "BONUS",
+        "Premiação TOTAL"
+    ]] = df.apply(
+        lambda row: calculate_row(row, row["is_manager"], row["is_trainee"]), 
+        axis=1
+    )
+
+    # Cleanup
+    df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str", "is_manager", "is_trainee"])
 
     logging.info("Premiações updated successfully.")
     return df
@@ -1675,7 +1920,7 @@ def main():
 
     # df_calc = update_premiacoes_from_comissoes(sheet, df_calc)
 
-    # Create and populate META_GERENTE sheet
+    '''# Create and populate META_GERENTE sheet
     df_meta_gerente = populate_meta_gerente(sheet)
     if not df_meta_gerente.empty:
         update_meta_gerente_sheet(sheet, df_meta_gerente)
@@ -1684,7 +1929,22 @@ def main():
         df_calc = update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees)
     
     # Update premiações from COMISSOES (for non-manager/trainee rows)
-    df_calc = update_premiacoes_from_comissoes(sheet, df_calc)
+    df_calc = update_premiacoes_from_comissoes(sheet, df_calc)'''
+
+    # First: Calculate premiações from COMISSOES (for everyone except managers)
+    # This sets Premiação Paga, BONUS, and Premiação TOTAL for non-managers
+    # For trainees, it calculates their COMISSOES-based premiação
+    df_calc = update_premiacoes_from_comissoes(sheet, df_calc, df_trainees)
+
+    # Second: Create and populate META_GERENTE sheet
+    df_meta_gerente = populate_meta_gerente(sheet)
+    if not df_meta_gerente.empty:
+        update_meta_gerente_sheet(sheet, df_meta_gerente)
+        
+        # Third: Update manager/trainee premiação based on META_GERENTE
+        # For managers: Sets Premiação TOTAL from META_GERENTE, clears other columns
+        # For trainees: Adds META_GERENTE total to existing Premiação TOTAL
+        df_calc = update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees)
 
     update_calc_sheet(sheet, df_calc)
 
