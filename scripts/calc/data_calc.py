@@ -1637,7 +1637,7 @@ def main():
 
     # df_calc = build_calc_base(df_trier, df_sci)
 
-     df_trainees = read_trainees(sheet)
+    df_trainees = read_trainees(sheet)
 
     df_meta_gerente = populate_meta_gerente(sheet)
     if not df_meta_gerente.empty:
