@@ -522,7 +522,7 @@ def read_trainees(sheet):
     df = df.drop(columns=["ID_key", "Filial_key"])
     
     logging.info(f"Updated Premiação TOTAL for {len(rows_to_update)} manager/trainee rows")
-    return df
+    return df'''
 
 def read_2_meta(sheet):
     try:
@@ -542,7 +542,7 @@ def read_2_meta(sheet):
         logging.warning("2_META missing required columns.")
         return pd.DataFrame()
 
-    return df'''
+    return df
 
 def update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees):
     """
