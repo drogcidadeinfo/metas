@@ -4,6 +4,7 @@ import time
 import logging
 import pandas as pd
 import gspread
+import math
 from google.oauth2.service_account import Credentials
 from googleapiclient.errors import HttpError
 
@@ -99,7 +100,246 @@ def float_to_br_text(value):
     int_str = f"{integer_part:,}".replace(",", ".")
     return f"{int_str},{decimal_part:02d}"
 
-import math
+def populate_meta_gerente(sheet):
+    """
+    Populate META_GERENTE worksheet with calculations based on VENDAS_FILIAL,
+    META_FILIAL, and COMISSOES worksheets.
+    """
+    logging.info("Populating META_GERENTE worksheet...")
+    
+    try:
+        # Read required worksheets
+        df_vendas_filial = read_worksheet_as_df(sheet, "VENDAS_FILIAL")
+        df_meta_filial = read_worksheet_as_df(sheet, "META_FILIAL")
+        df_comissoes = read_worksheet_as_df(sheet, "COMISSOES")
+    except gspread.exceptions.WorksheetNotFound as e:
+        logging.error(f"Required worksheet not found: {e}")
+        return pd.DataFrame()
+    
+    # Clean column names
+    df_vendas_filial.columns = df_vendas_filial.columns.str.strip()
+    df_meta_filial.columns = df_meta_filial.columns.str.strip()
+    
+    # Ensure required columns exist
+    vendas_required = ["Filial", "Faturamento Total", "Faturamento HB", 
+                       "Ticket Médio", "Custo Total"]
+    meta_required = ["Filial", "Number", "HB", "TKT MÉDIO", "CMV"]
+    
+    for col in vendas_required:
+        if col not in df_vendas_filial.columns:
+            logging.error(f"Column '{col}' not found in VENDAS_FILIAL")
+            return pd.DataFrame()
+    
+    for col in meta_required:
+        if col not in df_meta_filial.columns:
+            logging.error(f"Column '{col}' not found in META_FILIAL")
+            return pd.DataFrame()
+    
+    # Normalize Filial for joining
+    df_vendas_filial["Filial_key"] = (
+        df_vendas_filial["Filial"]
+        .astype(str)
+        .str.upper()
+        .str.replace("F", "", regex=False)
+        .str.strip()
+    )
+    
+    df_meta_filial["Filial_key"] = (
+        df_meta_filial["Filial"]
+        .astype(str)
+        .str.upper()
+        .str.replace("F", "", regex=False)
+        .str.strip()
+    )
+    
+    # Merge VENDAS_FILIAL and META_FILIAL
+    df_merged = pd.merge(
+        df_vendas_filial,
+        df_meta_filial,
+        on="Filial_key",
+        how="left",
+        suffixes=("_vendas", "_meta")
+    )
+    
+    if df_merged.empty:
+        logging.warning("No matching Filials found between VENDAS_FILIAL and META_FILIAL")
+        return pd.DataFrame()
+    
+    # Convert values to float for calculations
+    def convert_br_to_float_series(series):
+        """Convert Brazilian number strings to float"""
+        return series.apply(br_text_to_float)
+    
+    # Convert required columns
+    df_merged["Faturamento Total_float"] = convert_br_to_float_series(df_merged["Faturamento Total"])
+    df_merged["Number_float"] = convert_br_to_float_series(df_merged["Number"])
+    df_merged["Faturamento HB_float"] = convert_br_to_float_series(df_merged["Faturamento HB"])
+    df_merged["HB_float"] = convert_br_to_float_series(df_merged["HB"])
+    df_merged["Ticket Médio_float"] = convert_br_to_float_series(df_merged["Ticket Médio"])
+    df_merged["TKT MÉDIO_float"] = convert_br_to_float_series(df_merged["TKT MÉDIO"])
+    df_merged["Custo Total_float"] = convert_br_to_float_series(df_merged["Custo Total"])
+    df_merged["CMV_float"] = convert_br_to_float_series(df_merged["CMV"])
+    
+    # Calculate CMV % from VENDAS_FILIAL
+    df_merged["CMV_vendas_%"] = (df_merged["Custo Total_float"] / df_merged["Faturamento Total_float"]) * 100
+    
+    # Prepare result DataFrame
+    result_rows = []
+    
+    # Get unique Filials
+    unique_filials = sorted(df_merged["Filial_key"].unique())
+    
+    for filial in unique_filials:
+        filial_data = df_merged[df_merged["Filial_key"] == filial].iloc[0]
+        
+        # Initialize row
+        row = {"Filial": filial}
+        
+        # 1. Fat. Líquido calculation
+        if pd.notna(filial_data["Faturamento Total_float"]) and pd.notna(filial_data["Number_float"]):
+            if filial_data["Number_float"] > 0:
+                percent = (filial_data["Faturamento Total_float"] / filial_data["Number_float"]) * 100
+                
+                if percent >= 104:
+                    row["Fat. Líquido"] = "300,00"
+                elif percent >= 102:
+                    row["Fat. Líquido"] = "250,00"
+                elif percent >= 100:
+                    row["Fat. Líquido"] = "200,00"
+                else:
+                    row["Fat. Líquido"] = ""
+            else:
+                row["Fat. Líquido"] = ""
+        else:
+            row["Fat. Líquido"] = ""
+        
+        # 2. CMV calculation
+        if pd.notna(filial_data["CMV_vendas_%"]) and pd.notna(filial_data["CMV_float"]):
+            diff = filial_data["CMV_vendas_%"] - filial_data["CMV_float"]
+            
+            if diff <= -2:
+                row["CMV"] = "300,00"
+            elif diff <= -1:
+                row["CMV"] = "250,00"
+            elif diff == 0:
+                row["CMV"] = "200,00"
+            else:
+                row["CMV"] = ""
+        else:
+            row["CMV"] = ""
+        
+        # 3. HB calculation
+        if pd.notna(filial_data["Faturamento HB_float"]) and pd.notna(filial_data["HB_float"]):
+            if filial_data["HB_float"] > 0:
+                percent = (filial_data["Faturamento HB_float"] / filial_data["HB_float"]) * 100
+                
+                if percent >= 104:
+                    row["HB"] = "300,00"
+                elif percent >= 102:
+                    row["HB"] = "250,00"
+                elif percent >= 100:
+                    row["HB"] = "200,00"
+                else:
+                    row["HB"] = ""
+            else:
+                row["HB"] = ""
+        else:
+            row["HB"] = ""
+        
+        # 4. TKT Médio calculation
+        if pd.notna(filial_data["Ticket Médio_float"]) and pd.notna(filial_data["TKT MÉDIO_float"]):
+            if filial_data["TKT MÉDIO_float"] > 0:
+                percent = (filial_data["Ticket Médio_float"] / filial_data["TKT MÉDIO_float"]) * 100
+                
+                if percent >= 110:
+                    row["TKT Médio"] = "300,00"
+                elif percent >= 105:
+                    row["TKT Médio"] = "250,00"
+                elif percent >= 100:
+                    row["TKT Médio"] = "200,00"
+                else:
+                    row["TKT Médio"] = ""
+            else:
+                row["TKT Médio"] = ""
+        else:
+            row["TKT Médio"] = ""
+        
+        # 5. % Premiação Total calculation
+        row["% Premiação Total"] = ""
+        
+        # Calculate total Valor Comissão for this Filial
+        if not df_comissoes.empty and "Filial" in df_comissoes.columns and "Valor Comissão" in df_comissoes.columns:
+            # Normalize Filial in COMISSOES
+            df_comissoes["Filial_key"] = (
+                df_comissoes["Filial"]
+                .astype(str)
+                .str.upper()
+                .str.replace("F", "", regex=False)
+                .str.strip()
+            )
+            
+            # Filter for current Filial
+            filial_comissoes = df_comissoes[df_comissoes["Filial_key"] == filial]
+            
+            if not filial_comissoes.empty:
+                # Sum Valor Comissão for this Filial
+                total_comissao = 0
+                for _, comissao_row in filial_comissoes.iterrows():
+                    comissao_val = br_text_to_float(comissao_row["Valor Comissão"])
+                    if comissao_val is not None:
+                        total_comissao += comissao_val
+                
+                # Check if Faturamento Total meets target
+                if pd.notna(filial_data["Faturamento Total_float"]) and pd.notna(filial_data["Number_float"]):
+                    percentagem = (filial_data["Faturamento Total_float"] / filial_data["Number_float"]) * 100
+                    
+                    if percentagem >= 100:
+                        # 10% of total comissão
+                        premiacao_val = total_comissao * 0.10
+                    else:
+                        # 5% of total comissão
+                        premiacao_val = total_comissao * 0.05
+                    
+                    row["% Premiação Total"] = float_to_br_text_2(premiacao_val)
+        
+        result_rows.append(row)
+    
+    # Create final DataFrame
+    result_df = pd.DataFrame(result_rows)
+    
+    # Reorder columns as requested
+    column_order = ["Filial", "Fat. Líquido", "CMV", "HB", "TKT Médio", "% Premiação Total"]
+    result_df = result_df[column_order]
+    
+    logging.info(f"META_GERENTE populated with {len(result_df)} rows")
+    return result_df
+
+
+def update_meta_gerente_sheet(sheet, df):
+    """
+    Update or create META_GERENTE worksheet with the calculated data.
+    """
+    if df.empty:
+        logging.warning("META_GERENTE DataFrame is empty. Skipping update.")
+        return
+    
+    worksheet_name = "META_GERENTE"
+    df = df.fillna("")
+    rows = [df.columns.tolist()] + df.values.tolist()
+    
+    try:
+        ws = sheet.worksheet(worksheet_name)
+        ws.clear()
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sheet.add_worksheet(
+            title=worksheet_name,
+            rows=max(len(rows), 100),
+            cols=len(df.columns)
+        )
+    
+    logging.info(f"Updating {worksheet_name} worksheet...")
+    retry_api_call(lambda: ws.update(rows))
+    logging.info(f"{worksheet_name} worksheet updated successfully.")
 
 def read_2_meta(sheet):
     try:
@@ -1093,6 +1333,10 @@ def main():
 
     # df_calc = build_calc_base(df_trier, df_sci)
 
+    df_meta_gerente = populate_meta_gerente(sheet)
+    if not df_meta_gerente.empty:
+        update_meta_gerente_sheet(sheet, df_meta_gerente)
+
     # Preserve existing Meta BEFORE rebuilding
     existing_meta = read_existing_meta(sheet)
     
@@ -1125,7 +1369,7 @@ def main():
 
     # df_calc = populate_valor_diario_recomendado(df_calc)
 
-    df_calc = update_premiacoes_from_comissoes(sheet, df_calc)
+    df_calc = update_premiacoes_from_comissoes(sheet, df_calc) 
 
     update_calc_sheet(sheet, df_calc)
 
