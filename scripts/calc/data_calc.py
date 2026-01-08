@@ -119,6 +119,7 @@ def populate_meta_gerente(sheet):
     # Clean column names
     df_vendas_filial.columns = df_vendas_filial.columns.str.strip()
     df_meta_filial.columns = df_meta_filial.columns.str.strip()
+    df_comissoes.columns = df_comissoes.columns.str.strip()
     
     # Ensure required columns exist
     vendas_required = ["Filial", "Faturamento Total", "Faturamento HB", 
@@ -135,22 +136,44 @@ def populate_meta_gerente(sheet):
             logging.error(f"Column '{col}' not found in META_FILIAL")
             return pd.DataFrame()
     
-    # Normalize Filial for joining
-    df_vendas_filial["Filial_key"] = (
-        df_vendas_filial["Filial"]
-        .astype(str)
-        .str.upper()
-        .str.replace("F", "", regex=False)
-        .str.strip()
+    def normalize_filial_key(value, keep_leading_zeros=False):
+        """Normalize Filial value to match across worksheets."""
+        if pd.isna(value):
+            return ""
+        
+        # Convert to string and clean
+        str_value = str(value).strip().upper()
+        
+        # Remove "F" prefix if present
+        if str_value.startswith("F"):
+            str_value = str_value[1:]
+        
+        # If we want to keep leading zeros (for COMISSOES), return as-is
+        if keep_leading_zeros:
+            return str_value
+        
+        # Otherwise, convert to integer and back to string to remove leading zeros
+        try:
+            # Try to convert to int to remove leading zeros
+            return str(int(float(str_value))) if str_value else ""
+        except:
+            # If conversion fails, return the cleaned string
+            return str_value
+    
+    # Normalize Filial for joining - DIFFERENTLY for each worksheet
+    df_vendas_filial["Filial_key"] = df_vendas_filial["Filial"].apply(
+        lambda x: normalize_filial_key(x, keep_leading_zeros=False)
     )
     
-    df_meta_filial["Filial_key"] = (
-        df_meta_filial["Filial"]
-        .astype(str)
-        .str.upper()
-        .str.replace("F", "", regex=False)
-        .str.strip()
+    df_meta_filial["Filial_key"] = df_meta_filial["Filial"].apply(
+        lambda x: normalize_filial_key(x, keep_leading_zeros=False)
     )
+    
+    # For COMISSOES, we need to keep leading zeros for matching
+    if not df_comissoes.empty and "Filial" in df_comissoes.columns:
+        df_comissoes["Filial_key"] = df_comissoes["Filial"].apply(
+            lambda x: normalize_filial_key(x, keep_leading_zeros=True)
+        )
     
     # Merge VENDAS_FILIAL and META_FILIAL
     df_merged = pd.merge(
@@ -189,6 +212,31 @@ def populate_meta_gerente(sheet):
     # Get unique Filials
     unique_filials = sorted(df_merged["Filial_key"].unique())
     
+    # Create a mapping from normalized Filial to COMISSOES Filial with leading zeros
+    # This handles cases where VENDAS_FILIAL has "1" but COMISSOES has "01"
+    filial_mapping = {}
+    for filial in unique_filials:
+        # Try to find matching Filial in COMISSOES
+        if not df_comissoes.empty and "Filial_key" in df_comissoes.columns:
+            # Look for exact match first
+            matches = df_comissoes[df_comissoes["Filial_key"] == filial]
+            
+            # If no exact match, try to match by converting to int
+            if matches.empty:
+                try:
+                    filial_int = int(filial)
+                    # Try with leading zero
+                    filial_with_zero = f"{filial_int:02d}"
+                    matches = df_comissoes[df_comissoes["Filial_key"] == filial_with_zero]
+                    
+                    if not matches.empty:
+                        filial_mapping[filial] = filial_with_zero
+                except:
+                    pass
+            
+            if not matches.empty and filial not in filial_mapping:
+                filial_mapping[filial] = filial
+    
     for filial in unique_filials:
         filial_data = df_merged[df_merged["Filial_key"] == filial].iloc[0]
         
@@ -217,11 +265,14 @@ def populate_meta_gerente(sheet):
         if pd.notna(filial_data["CMV_vendas_%"]) and pd.notna(filial_data["CMV_float"]):
             diff = filial_data["CMV_vendas_%"] - filial_data["CMV_float"]
             
-            if diff <= -2:
+            # Round to handle floating point precision
+            diff_rounded = round(diff, 2)
+            
+            if diff_rounded <= -2:
                 row["CMV"] = "300,00"
-            elif diff <= -1:
+            elif diff_rounded <= -1:
                 row["CMV"] = "250,00"
-            elif diff == 0:
+            elif diff_rounded == 0:
                 row["CMV"] = "200,00"
             else:
                 row["CMV"] = ""
@@ -268,39 +319,46 @@ def populate_meta_gerente(sheet):
         row["% Premiação Total"] = ""
         
         # Calculate total Valor Comissão for this Filial
-        if not df_comissoes.empty and "Filial" in df_comissoes.columns and "Valor Comissão" in df_comissoes.columns:
-            # Normalize Filial in COMISSOES
-            df_comissoes["Filial_key"] = (
-                df_comissoes["Filial"]
-                .astype(str)
-                .str.upper()
-                .str.replace("F", "", regex=False)
-                .str.strip()
-            )
+        if not df_comissoes.empty and "Filial_key" in df_comissoes.columns and "Valor Comissão" in df_comissoes.columns:
+            # Use the mapping to find the correct Filial key in COMISSOES
+            comissoes_filial_key = filial_mapping.get(filial, filial)
             
-            # Filter for current Filial
-            filial_comissoes = df_comissoes[df_comissoes["Filial_key"] == filial]
+            # Filter for current Filial in COMISSOES
+            filial_comissoes = df_comissoes[df_comissoes["Filial_key"] == comissoes_filial_key]
             
             if not filial_comissoes.empty:
+                logging.debug(f"Found {len(filial_comissoes)} COMISSOES rows for Filial {filial} (key: {comissoes_filial_key})")
+                
                 # Sum Valor Comissão for this Filial
                 total_comissao = 0
+                comissao_count = 0
                 for _, comissao_row in filial_comissoes.iterrows():
                     comissao_val = br_text_to_float(comissao_row["Valor Comissão"])
                     if comissao_val is not None:
                         total_comissao += comissao_val
+                        comissao_count += 1
+                
+                logging.debug(f"Total Valor Comissão for Filial {filial}: {total_comissao} (from {comissao_count} rows)")
                 
                 # Check if Faturamento Total meets target
                 if pd.notna(filial_data["Faturamento Total_float"]) and pd.notna(filial_data["Number_float"]):
                     percentagem = (filial_data["Faturamento Total_float"] / filial_data["Number_float"]) * 100
                     
+                    logging.debug(f"Faturamento Total: {filial_data['Faturamento Total_float']}, Target: {filial_data['Number_float']}, %: {percentagem}")
+                    
                     if percentagem >= 100:
                         # 10% of total comissão
                         premiacao_val = total_comissao * 0.10
+                        logging.debug(f"10% of comissão: {premiacao_val}")
                     else:
                         # 5% of total comissão
                         premiacao_val = total_comissao * 0.05
+                        logging.debug(f"5% of comissão: {premiacao_val}")
                     
                     row["% Premiação Total"] = float_to_br_text_2(premiacao_val)
+                    logging.debug(f"% Premiação Total for Filial {filial}: {row['% Premiação Total']}")
+            else:
+                logging.debug(f"No COMISSOES found for Filial {filial} (tried key: {comissoes_filial_key})")
         
         result_rows.append(row)
     
@@ -313,7 +371,6 @@ def populate_meta_gerente(sheet):
     
     logging.info(f"META_GERENTE populated with {len(result_df)} rows")
     return result_df
-
 
 def update_meta_gerente_sheet(sheet, df):
     """
