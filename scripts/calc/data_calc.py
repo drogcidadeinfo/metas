@@ -1113,10 +1113,7 @@ def main():
         logging.warning("Calc dataframe is empty. Nothing to upload.")
         return
 
-    df_calc = remove_colaborador(
-        df_calc,
-        "WESLEY MIRANDA PEREIRA"
-    )
+    # df_calc = remove_colaborador(df_calc,"WESLEY MIRANDA PEREIRA")
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     # df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
