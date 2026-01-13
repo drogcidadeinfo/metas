@@ -2,8 +2,8 @@ name: data_metas_up
 
 on:
   workflow_dispatch:
-  #schedule:
-    #- cron: '0 8 * * *'  # Runs daily at 5am GMT-3
+  schedule:
+    - cron: '0 8 * * *'  # Runs daily at 5am GMT-3
 
 permissions: write-all
 
