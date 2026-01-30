@@ -97,7 +97,7 @@ def process_excel_data(file_path):
     sheet = wb.active
 
     for row in sheet.iter_rows(min_row=1, max_row=5, values_only=True):
-    logging.info(row)
+        logging.info(row)
 
     def get_column_index(sheet, header_name):
         header_name = header_name.strip().lower()
