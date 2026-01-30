@@ -96,6 +96,9 @@ def process_excel_data(file_path):
     wb = load_workbook(file_path, data_only=True)
     sheet = wb.active
 
+    for row in sheet.iter_rows(min_row=1, max_row=5, values_only=True):
+    logging.info(row)
+
     def get_column_index(sheet, header_name):
         header_name = header_name.strip().lower()
         for col in sheet.iter_cols(1, sheet.max_column):
