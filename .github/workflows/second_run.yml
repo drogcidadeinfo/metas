@@ -2,8 +2,8 @@ name: update calc worksheet
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 9 * * *"   # runs daily at 06:00 UTC (03:00 GMT-3)
+  #schedule:
+    #- cron: "0 9 * * *"   # runs daily at 06:00 UTC (03:00 GMT-3)
 
 jobs:
   update-calc:
