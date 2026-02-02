@@ -1139,11 +1139,18 @@ def update_premiacoes_from_comissoes(sheet, df_calc):
 
 def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     """
-    Update premiações from COMISSOES for all rows EXCEPT managers.
-    For trainees, calculate normally but don't set Premiação TOTAL yet
-    (it will be added to later by update_gerente_premiacao).
+    Update premiações using COMISSOES.
+
+    Changes vs previous version:
+    - If a Código appears multiple times in COMISSOES, sum all "Valor Comissão" values
+      and use the summed value for that Código in calc.
+    - For managers (GERENTE, SUBGERENTE, GERENTE FARMACEUTICO), also show the summed
+      commission in "Premiação Acomul.", while keeping "Premiação Paga", "BONUS" and
+      "Premiação TOTAL" empty (their TOTAL will be handled later by META_GERENTE).
+    - For trainees, calculate normally (so they keep Premiação Paga/BONUS/TOTAL from COMISSOES),
+      and later META_GERENTE will be added to their TOTAL by update_gerente_premiacao().
     """
-    logging.info("Updating premiações from COMISSOES...")
+    logging.info("Updating premiações from COMISSOES (with Código aggregation)...")
 
     df_com = read_worksheet_as_df(sheet, "COMISSOES")
 
@@ -1153,7 +1160,7 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
 
     df_com.columns = df_com.columns.str.strip()
 
-    required_cols = ["Filial", "Código", "Valor Comissão"]
+    required_cols = ["Código", "Valor Comissão"]
     for col in required_cols:
         if col not in df_com.columns:
             logging.warning(f"Column '{col}' not found in COMISSOES.")
@@ -1161,21 +1168,13 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
 
     # Get list of IDs from TRAINEES sheet
     trainee_ids = set()
-    if not df_trainees.empty:
+    if not df_trainees.empty and "ID" in df_trainees.columns:
         trainee_ids = set(df_trainees["ID"].astype(str).str.strip().unique())
 
     # Define which functions are managers
     manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
 
-    # Normalize keys
-    df_com["Filial_key"] = (
-        df_com["Filial"]
-        .astype(str)
-        .str.strip()
-        .astype(int)
-        .astype(str)
-    )
-
+    # Normalize Código keys in COMISSOES
     df_com["Código_key"] = (
         df_com["Código"]
         .astype(str)
@@ -1183,44 +1182,70 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
         .str.strip()
     )
 
-    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
-    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
+    # Convert "Valor Comissão" to float for summing
+    def safe_comissao_to_float(v):
+        if v is None or str(v).strip() == "":
+            return 0.0
+        return br_text_to_float(str(v)) or 0.0
 
-    # Keep Valor Comissão as TEXT
-    df_com["Valor Comissão_str"] = df_com["Valor Comissão"].astype(str)
+    df_com["Valor Comissão_float"] = df_com["Valor Comissão"].apply(safe_comissao_to_float)
 
-    # Merge
-    df = df_calc.merge(
-        df_com[["Filial_key", "Código_key", "Valor Comissão_str"]],
-        on=["Filial_key", "Código_key"],
-        how="left"
+    # Group by Código and sum all commissions (this is the requested behavior)
+    df_com_grouped = (
+        df_com.groupby("Código_key", as_index=False)["Valor Comissão_float"]
+        .sum()
+        .rename(columns={"Valor Comissão_float": "Valor_Comissao_Total"})
     )
+
+    # Prepare calc keys
+    df = df_calc.copy()
+    df["Código_key"] = (
+        df["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    # Merge aggregated commission totals into calc by Código
+    df = df.merge(df_com_grouped, on="Código_key", how="left")
+
+    # Helper: float → BR text (blank if missing/zero)
+    def total_to_br_text(total):
+        if total is None or pd.isna(total) or float(total) == 0.0:
+            return ""
+        return float_to_br_text_2(total)
+
+    df["Valor Comissão_str"] = df["Valor_Comissao_Total"].apply(total_to_br_text)
+
+    # Determine which rows are managers and which are trainees
+    df["is_manager"] = df["Função"].astype(str).str.strip().str.upper().isin(manager_funcoes)
+    df["is_trainee"] = df["ID"].astype(str).str.strip().isin(trainee_ids)
 
     # -------------------------------
     # Calculations
     # -------------------------------
-    def calculate_row(row, is_manager, is_trainee):
-        # Skip managers completely
-        if is_manager and not is_trainee:
-            return pd.Series([
-                "", "", "", ""  # Keep everything empty for managers
-            ])
-        
-        meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
-        comissao_txt = row["Valor Comissão_str"]
+    def calculate_row(row):
+        comissao_txt = row.get("Valor Comissão_str", "")
         comissao = br_text_to_float(comissao_txt)
 
-        # Defaults
+        # Always show accumulated commission when we have it (including managers)
         premiacao_acumulada = comissao_txt if comissao is not None else ""
+
+        # Managers (non-trainees): keep Paga/Bonus/Total empty, but show Acomul.
+        if row["is_manager"] and not row["is_trainee"]:
+            return pd.Series([premiacao_acumulada, "", "", ""])
+
+        meta = br_text_to_float(row.get("Meta", ""))
+        realizado = br_text_to_float(row.get("Valor Realizado", ""))
+
+        # Defaults
         premiacao_paga = ""
         bonus = ""
         total = ""
 
+        # Guard clauses
         if meta is None or meta == 0 or comissao is None:
-            return pd.Series([
-                premiacao_acumulada, premiacao_paga, bonus, total
-            ])
+            return pd.Series([premiacao_acumulada, premiacao_paga, bonus, total])
 
         if realizado is None:
             realizado = 0.0
@@ -1228,11 +1253,7 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
         percentual = realizado / meta
 
         # Premiação Paga
-        if percentual < 0.80:
-            paga = comissao * 0.5
-        else:
-            paga = comissao
-
+        paga = comissao * 0.5 if percentual < 0.80 else comissao
         premiacao_paga = float_to_br_text_2(paga)
 
         # BONUS
@@ -1244,36 +1265,29 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
 
         bonus = float_to_br_text_2(bonus_val) if bonus_val > 0 else ""
 
-        # TOTAL - calculate for everyone (will be overridden for managers)
+        # TOTAL (COMISSOES-based)
         total_val = paga + bonus_val
         total = float_to_br_text_2(total_val)
 
-        return pd.Series([
-            premiacao_acumulada,
-            premiacao_paga,
-            bonus,
-            total
-        ])
+        return pd.Series([premiacao_acumulada, premiacao_paga, bonus, total])
 
-    # Determine which rows are managers and which are trainees
-    df["is_manager"] = df["Função"].astype(str).str.strip().str.upper().isin(manager_funcoes)
-    df["is_trainee"] = df["ID"].astype(str).str.strip().isin(trainee_ids)
-    
-    # Apply calculations to all rows
     df[[
         "Premiação Acomul.",
         "Premiação Paga",
         "BONUS",
         "Premiação TOTAL"
-    ]] = df.apply(
-        lambda row: calculate_row(row, row["is_manager"], row["is_trainee"]), 
-        axis=1
-    )
+    ]] = df.apply(calculate_row, axis=1)
 
     # Cleanup
-    df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str", "is_manager", "is_trainee"])
+    df = df.drop(columns=[
+        "Código_key",
+        "Valor_Comissao_Total",
+        "Valor Comissão_str",
+        "is_manager",
+        "is_trainee",
+    ])
 
-    logging.info("Premiações updated successfully.")
+    logging.info("Premiações updated successfully (COMISSOES aggregated by Código).")
     return df
 
 def populate_progresso(df_calc):
