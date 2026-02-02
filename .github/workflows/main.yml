@@ -51,29 +51,29 @@ jobs:
           #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         #run: python scripts/file_processing/sci_users_proc.py
 
-      #- name: run scraper for vendas_filial
-        #env:
-          #trier_user: ${{ secrets.TRIER_USER }}
-          #trier_password: ${{ secrets.TRIER_PASSWORD }}
-        #run: python scripts/info_downloads/raw_vendas_filial.py
+      - name: run scraper for vendas_filial
+        env:
+          trier_user: ${{ secrets.TRIER_USER }}
+          trier_password: ${{ secrets.TRIER_PASSWORD }}
+        run: python scripts/info_downloads/raw_vendas_filial.py
 
-      #- name: vendas_filial procUp to google sheets
-        #env:
-          #GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        #run: python scripts/file_processing/vendas_filial_proc.py
+      - name: vendas_filial procUp to google sheets
+        env:
+          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/file_processing/vendas_filial_proc.py
 
-      #- name: run scraper for comissoes
-        #env:
-          #trier_user: ${{ secrets.TRIER_USER }}
-          #trier_password: ${{ secrets.TRIER_PASSWORD }}
-        #run: python scripts/info_downloads/raw_comissao_vendedor.py
+      - name: run scraper for comissoes
+        env:
+          trier_user: ${{ secrets.TRIER_USER }}
+          trier_password: ${{ secrets.TRIER_PASSWORD }}
+        run: python scripts/info_downloads/raw_comissao_vendedor.py
 
-      #- name: comissoes procUp to google sheets
-        #env:
-          #GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        #run: python scripts/file_processing/comissao_proc.py
+      - name: comissoes procUp to google sheets
+        env:
+          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/file_processing/comissao_proc.py
 
       - name: run scraper for vendas_vendedor
         env:
