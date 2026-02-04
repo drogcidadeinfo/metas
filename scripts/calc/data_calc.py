@@ -1376,11 +1376,10 @@ def main():
     client = get_gspread_client()
     sheet = client.open_by_key(sheet_id)
 
-    df_trier = read_worksheet_as_df(sheet, "users_trier")
-    df_sci = read_worksheet_as_df(sheet, "users_sci")
+    filtered_user_df = read_worksheet_as_df(sheet, "filtered_user")
 
-    if df_trier.empty or df_sci.empty:
-        logging.warning("One or more source worksheets are empty.")
+    if filtered_user_df.empty:
+        logging.warning("filtered_user source worksheet is empty.")
         return
 
     # df_calc = build_calc_base(df_trier, df_sci)
@@ -1394,7 +1393,7 @@ def main():
     # Preserve existing Meta BEFORE rebuilding
     existing_meta = read_existing_meta(sheet)
     
-    df_calc = build_calc_base(df_trier, df_sci)
+    calc_base = build_calc_base(filtered_user_df)
 
     df_2_meta = read_2_meta(sheet)
     df_calc = apply_2_meta_overrides(df_calc, df_2_meta)
