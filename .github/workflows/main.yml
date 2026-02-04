@@ -51,6 +51,12 @@ jobs:
           SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: python scripts/file_processing/sci_users_proc.py
 
+      - name: filtered_users to google sheets
+        env:
+          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
+          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
+        run: python scripts/calc/users_calc.py
+
       #- name: run scraper for vendas_filial
         #env:
           #trier_user: ${{ secrets.TRIER_USER }}
