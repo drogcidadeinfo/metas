@@ -90,8 +90,8 @@ try:
         data_inicio = today.replace(day=1).strftime('%d/%m/%Y')  # Primeiro dia do mês atual
         data_fim = (today - timedelta(days=1)).strftime('%d/%m/%Y')  # Ontem
 
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "dat_inicio"))).send_keys("01012026") # (data_inicio)
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "dat_fim"))).send_keys("31012026") # (data_fim)
+    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "dat_inicio"))).send_keys(data_inicio) # (data_inicio)
+    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "dat_fim"))).send_keys(data_fim) # (data_fim)
     print(f"Período configurado: {data_inicio} a {data_fim}", flush=True)
 
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "tabTabdhtmlgoodies_tabView1_5"))).click()
