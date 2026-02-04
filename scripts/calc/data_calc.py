@@ -7,6 +7,8 @@ import gspread
 import math
 from google.oauth2.service_account import Credentials
 from googleapiclient.errors import HttpError
+from datetime import date, timedelta
+import calendar
 
 # --------------------------------------------------
 # Config logging
@@ -61,20 +63,6 @@ def read_worksheet_as_df(sheet, worksheet_name):
     rows = values[1:]
 
     return pd.DataFrame(rows, columns=headers)
-
-'''def populate_meta_for_testing(df_calc):
-    logging.info("Populating Meta column (TEST MODE)...")
-
-    META_BY_CODIGO = {
-        342: "4000,85",
-        356: "7400,00",
-        225: "10000,85",
-    }
-
-    df_calc["Meta"] = df_calc["Código"].map(META_BY_CODIGO).fillna("")
-
-    logging.info("Meta column populated for testing.")
-    return df_calc'''
 
 def br_text_to_float(value):
     """Convert Brazilian number text to float: 12.345,67 → 12345.67"""
@@ -423,106 +411,6 @@ def read_trainees(sheet):
     df["Filial"] = df["Filial"].astype(str).str.strip()
     
     return df
-
-'''def update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees):
-    """
-    Update Premiação Paga, BONUS, and Premiação TOTAL for:
-    1. All rows where FUNÇÃO is GERENTE, SUBGERENTE, or GERENTE FARMACEUTICO
-    2. All rows where ID matches TRAINEES sheet
-    
-    Premiação TOTAL = sum of Fat. Líquido, CMV, HB, TKT Médio, % Premiação Total from META_GERENTE
-    Premiação Paga and BONUS should remain empty for these rows.
-    """
-    if df_meta_gerente.empty:
-        logging.warning("META_GERENTE sheet is empty. Cannot update gerente premiação.")
-        return df_calc
-    
-    # Create a copy to avoid modifying the original
-    df = df_calc.copy()
-    
-    # Normalize df_meta_gerente Filial for matching
-    df_meta_gerente = df_meta_gerente.copy()
-    df_meta_gerente["Filial_key"] = (
-        df_meta_gerente["Filial"]
-        .astype(str)
-        .str.strip()
-    )
-    
-    # Create a mapping from Filial to total premiação
-    filial_premiacao_map = {}
-    
-    for _, row in df_meta_gerente.iterrows():
-        filial = str(row["Filial_key"])
-        total = 0.0
-        
-        # Sum all premiação columns
-        columns_to_sum = ["Fat. Líquido", "CMV", "HB", "TKT Médio", "% Premiação Total"]
-        
-        for col in columns_to_sum:
-            if col in row:
-                value = br_text_to_float(row[col])
-                if value is not None:
-                    total += value
-        
-        filial_premiacao_map[filial] = total
-    
-    logging.info(f"Created premiação mapping for {len(filial_premiacao_map)} Filials")
-    
-    # Get list of IDs from TRAINEES sheet
-    trainee_ids = set()
-    if not df_trainees.empty:
-        trainee_ids = set(df_trainees["ID"].astype(str).str.strip().unique())
-        logging.info(f"Found {len(trainee_ids)} unique trainee IDs")
-    
-    # Normalize df columns
-    df["ID_key"] = df["ID"].astype(str).str.strip()
-    df["Filial_key"] = df["Filial"].astype(str).str.strip()
-    
-    # Define which functions should be treated as managers
-    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
-    
-    # Identify rows to update
-    rows_to_update = []
-    
-    for idx, row in df.iterrows():
-        update_this_row = False
-        
-        # Check if it's a manager by function
-        funcao = str(row.get("Função", "")).strip().upper()
-        if funcao in manager_funcoes:
-            update_this_row = True
-        
-        # Check if it's a trainee by ID
-        elif row["ID_key"] in trainee_ids:
-            update_this_row = True
-        
-        if update_this_row:
-            filial = row["Filial_key"]
-            if filial in filial_premiacao_map:
-                rows_to_update.append(idx)
-    
-    logging.info(f"Found {len(rows_to_update)} rows to update (managers + trainees)")
-    
-    # Update the identified rows
-    for idx in rows_to_update:
-        filial = df.at[idx, "Filial_key"]
-        total_premiacao = filial_premiacao_map.get(filial, 0.0)
-        
-        # Update Premiação TOTAL
-        df.at[idx, "Premiação TOTAL"] = float_to_br_text_2(total_premiacao)
-        
-        # Clear Premiação Paga and BONUS for these rows
-        df.at[idx, "Premiação Paga"] = ""
-        df.at[idx, "BONUS"] = ""
-        
-        # Also clear Premiação Acomul. for these rows
-        df.at[idx, "Premiação Acomul."] = ""
-    
-    # Clean up temporary columns
-    df = df.drop(columns=["ID_key", "Filial_key"])
-    
-    logging.info(f"Updated Premiação TOTAL for {len(rows_to_update)} manager/trainee rows")
-    return df'''
 
 def read_2_meta(sheet):
     try:
@@ -904,239 +792,6 @@ def br_text_to_float(value):
     except:
         return None
 
-'''def update_premiacoes_from_comissoes(sheet, df_calc):
-    logging.info("Updating premiações from COMISSOES...")
-
-    df_com = read_worksheet_as_df(sheet, "COMISSOES")
-
-    if df_com.empty:
-        logging.warning("COMISSOES worksheet is empty.")
-        return df_calc
-
-    df_com.columns = df_com.columns.str.strip()
-
-    required_cols = ["Filial", "Código", "Valor Comissão"]
-    for col in required_cols:
-        if col not in df_com.columns:
-            logging.warning(f"Column '{col}' not found in COMISSOES.")
-            return df_calc
-
-    # Normalize keys
-    df_com["Filial_key"] = (
-        df_com["Filial"]
-        .astype(str)
-        .str.strip()
-        .astype(int)
-        .astype(str)
-    )
-
-    df_com["Código_key"] = (
-        df_com["Código"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
-
-    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
-    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
-
-    # Keep Valor Comissão as TEXT
-    df_com["Valor Comissão_str"] = df_com["Valor Comissão"].astype(str)
-
-    # Merge
-    df = df_calc.merge(
-        df_com[["Filial_key", "Código_key", "Valor Comissão_str"]],
-        on=["Filial_key", "Código_key"],
-        how="left"
-    )
-
-    # -------------------------------
-    # Calculations
-    # -------------------------------
-    def calculate_row(row):
-        meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
-        comissao_txt = row["Valor Comissão_str"]
-        comissao = br_text_to_float(comissao_txt)
-
-        # Defaults
-        premiacao_acumulada = comissao_txt if comissao is not None else ""
-        premiacao_paga = ""
-        bonus = ""
-        total = ""
-
-        if meta is None or meta == 0 or comissao is None:
-            return pd.Series([
-                premiacao_acumulada, premiacao_paga, bonus, total
-            ])
-
-        if realizado is None:
-            realizado = 0.0
-
-        percentual = realizado / meta
-
-        # Premiação Paga
-        if percentual < 0.80:
-            paga = comissao * 0.5
-        else:
-            paga = comissao
-
-        premiacao_paga = float_to_br_text_2(paga)
-
-        # BONUS
-        bonus_val = 0.0
-        if 1.05 <= percentual < 1.10:
-            bonus_val = 75.0
-        elif percentual >= 1.10:
-            bonus_val = 150.0
-
-        bonus = float_to_br_text_2(bonus_val) if bonus_val > 0 else ""
-
-        # TOTAL
-        total_val = paga + bonus_val
-        total = float_to_br_text_2(total_val)
-
-        return pd.Series([
-            premiacao_acumulada,
-            premiacao_paga,
-            bonus,
-            total
-        ])
-
-    df[[
-        "Premiação Acomul.",
-        "Premiação Paga",
-        "BONUS",
-        "Premiação TOTAL"
-    ]] = df.apply(calculate_row, axis=1)
-
-    # Cleanup
-    df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str"])
-
-    logging.info("Premiações updated successfully.")
-    return df
-
-def update_premiacoes_from_comissoes(sheet, df_calc):
-    logging.info("Updating premiações from COMISSOES...")
-
-    df_com = read_worksheet_as_df(sheet, "COMISSOES")
-
-    if df_com.empty:
-        logging.warning("COMISSOES worksheet is empty.")
-        return df_calc
-
-    df_com.columns = df_com.columns.str.strip()
-
-    required_cols = ["Filial", "Código", "Valor Comissão"]
-    for col in required_cols:
-        if col not in df_com.columns:
-            logging.warning(f"Column '{col}' not found in COMISSOES.")
-            return df_calc
-
-    # Normalize keys
-    df_com["Filial_key"] = (
-        df_com["Filial"]
-        .astype(str)
-        .str.strip()
-        .astype(int)
-        .astype(str)
-    )
-
-    df_com["Código_key"] = (
-        df_com["Código"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
-
-    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
-    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
-
-    # Keep Valor Comissão as TEXT
-    df_com["Valor Comissão_str"] = df_com["Valor Comissão"].astype(str)
-
-    # Merge
-    df = df_calc.merge(
-        df_com[["Filial_key", "Código_key", "Valor Comissão_str"]],
-        on=["Filial_key", "Código_key"],
-        how="left"
-    )
-
-    # -------------------------------
-    # Calculations - ONLY for rows without Premiação TOTAL
-    # -------------------------------
-    def calculate_row(row):
-        # Skip rows that already have Premiação TOTAL filled (managers/trainees)
-        if row.get("Premiação TOTAL", ""):
-            return pd.Series([
-                "", "", "", ""  # Keep existing values empty for managers/trainees
-            ])
-        
-        meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
-        comissao_txt = row["Valor Comissão_str"]
-        comissao = br_text_to_float(comissao_txt)
-
-        # Defaults
-        premiacao_acumulada = comissao_txt if comissao is not None else ""
-        premiacao_paga = ""
-        bonus = ""
-        total = ""
-
-        if meta is None or meta == 0 or comissao is None:
-            return pd.Series([
-                premiacao_acumulada, premiacao_paga, bonus, total
-            ])
-
-        if realizado is None:
-            realizado = 0.0
-
-        percentual = realizado / meta
-
-        # Premiação Paga
-        if percentual < 0.80:
-            paga = comissao * 0.5
-        else:
-            paga = comissao
-
-        premiacao_paga = float_to_br_text_2(paga)
-
-        # BONUS
-        bonus_val = 0.0
-        if 1.05 <= percentual < 1.10:
-            bonus_val = 75.0
-        elif percentual >= 1.10:
-            bonus_val = 150.0
-
-        bonus = float_to_br_text_2(bonus_val) if bonus_val > 0 else ""
-
-        # TOTAL
-        total_val = paga + bonus_val
-        total = float_to_br_text_2(total_val)
-
-        return pd.Series([
-            premiacao_acumulada,
-            premiacao_paga,
-            bonus,
-            total
-        ])
-
-    # Apply calculations only to rows that need them
-    mask = df["Premiação TOTAL"] == ""
-    if mask.any():
-        df.loc[mask, [
-            "Premiação Acomul.",
-            "Premiação Paga",
-            "BONUS",
-            "Premiação TOTAL"
-        ]] = df[mask].apply(calculate_row, axis=1)
-
-    # Cleanup
-    df = df.drop(columns=["Filial_key", "Código_key", "Valor Comissão_str"])
-
-    logging.info("Premiações updated successfully.")
-    return df'''
-
 def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     """
     Update premiações using COMISSOES.
@@ -1319,9 +974,6 @@ def populate_progresso(df_calc):
     logging.info("Progresso populated.")
     return df_calc
 
-from datetime import date, timedelta
-import calendar
-
 def populate_valor_diario_recomendado(df_calc):
     logging.info("Calculating Valor Diário Recomendado...")
 
@@ -1467,27 +1119,18 @@ def update_premiacao_from_comissoes(sheet, df_calc):
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
 # --------------------------------------------------
-def build_calc_base(df_trier, df_sci):
+def build_calc_base(filtered_user_df):
     logging.info("Building calc base columns...")
-
-    def normalize_name(s):
-        return str(s).strip().upper()
-
-    df_trier["NAME_KEY"] = df_trier["Funcionário"].apply(normalize_name)
-    df_sci["NAME_KEY"] = df_sci["Nome"].apply(normalize_name)
-
-    df = df_trier.merge(
-        df_sci,
-        on="NAME_KEY",
-        how="inner",
-        suffixes=("_trier", "_sci")
-    )
-
+    
+    # Make a copy to avoid modifying the original
+    df = filtered_user_df.copy()
+    
     if df.empty:
-        logging.warning("No matching users found.")
+        logging.warning("No users found in filtered_user sheet.")
         return pd.DataFrame()
 
-    # Filial: F01 → 1
+    # Filial: F01 → 1 (if needed - adjust based on your actual data format)
+    # Check if Filial contains "F" prefix
     df["Filial_calc"] = (
         df["Filial"]
         .astype(str)
@@ -1516,25 +1159,11 @@ def build_calc_base(df_trier, df_sci):
         .apply(lambda x: x.split("-", 1)[1].strip() if "-" in x else x)
     )
 
-    '''calc_df = pd.DataFrame({
-        "ID": df["ID"],
-        "Filial": df["Filial_calc"],
-        "Código": df["Código"],
-        "Colaborador": df["Funcionário"],
-        "Meta": "",
-        "Valor Realizado": "",
-        "Valor Restante": "",
-        "Progresso": "",
-        "Valor Diário Recomendado": "",
-        "Função": df["Função_calc"],
-        "Premiação": ""
-    })'''
-
     calc_df = pd.DataFrame({
         "ID": df["ID"],
         "Filial": df["Filial_calc"],
         "Código": df["Código"],
-        "Colaborador": df["Funcionário"],
+        "Colaborador": df["Nome"],  # Changed from "Funcionário" to "Nome"
         "Meta": "",
         "Valor Realizado": "",
         "Valor Restante": "",
@@ -1590,146 +1219,6 @@ def get_2_meta_codigos(df_2_meta):
         .str.strip()
         .unique()
     )
-
-'''def update_valor_realizado_from_vendas(sheet, df_calc):
-    logging.info("Reading VENDAS_VENDEDOR worksheet...")
-
-    df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
-
-    if df_vendas.empty:
-        logging.warning("VENDAS_VENDEDOR is empty.")
-        return df_calc
-
-    # Clean column names
-    df_vendas.columns = df_vendas.columns.str.strip()
-
-    required_cols = ["Filial", "Código", "Valor Vendas"]
-    for col in required_cols:
-        if col not in df_vendas.columns:
-            logging.warning(f"Column '{col}' not found.")
-            return df_calc
-
-    # Normalize keys ONLY (as strings)
-    df_vendas["Filial_key"] = (
-        df_vendas["Filial"]
-        .astype(str)
-        .str.upper()
-        .str.replace("F", "", regex=False)
-        .str.strip()
-    )
-
-    df_vendas["Código_key"] = (
-        df_vendas["Código"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
-
-    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
-    df_calc["Código_key"] = df_calc["Código"].astype(str).str.strip()
-
-    # IMPORTANT: force Valor Vendas to string (EXACT value)
-    df_vendas["Valor Vendas_str"] = df_vendas["Valor Vendas"].astype(str)
-
-    # Merge
-    df_merged = df_calc.merge(
-        df_vendas[["Filial_key", "Código_key", "Valor Vendas_str"]],
-        on=["Filial_key", "Código_key"],
-        how="left"
-    )
-
-    # Copy EXACT text
-    mask = df_merged["Valor Vendas_str"].notna()
-    df_merged.loc[mask, "Valor Realizado"] = df_merged.loc[mask, "Valor Vendas_str"]
-
-    # Cleanup
-    df_merged = df_merged.drop(
-        columns=["Filial_key", "Código_key", "Valor Vendas_str"]
-    )
-
-    logging.info(f"Copied Valor Realizado for {mask.sum()} rows (TEXT mode).")
-
-    return df_merged'''
-
-'''def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
-    """
-    Sum Valor Vendas across all stores for each Código in VENDAS_VENDEDOR,
-    excluding Códigos from 2_META sheet.
-    """
-    logging.info("Reading VENDAS_VENDEDOR worksheet for Valor Realizado...")
-    
-    df_vendas = read_worksheet_as_df(sheet, "VENDAS_VENDEDOR")
-    
-    if df_vendas.empty:
-        logging.warning("VENDAS_VENDEDOR is empty.")
-        return df_calc
-    
-    # Clean column names
-    df_vendas.columns = df_vendas.columns.str.strip()
-    
-    required_cols = ["Código", "Valor Vendas"]
-    for col in required_cols:
-        if col not in df_vendas.columns:
-            logging.warning(f"Column '{col}' not found in VENDAS_VENDEDOR.")
-            return df_calc
-    
-    # Normalize Código keys
-    df_vendas["Código_key"] = (
-        df_vendas["Código"]
-        .astype(str)
-        .str.replace(".0", "", regex=False)
-        .str.strip()
-    )
-    
-    # Convert Valor Vendas from Brazilian text to float for summing
-    def safe_convert(value):
-        if pd.isna(value) or value == "":
-            return 0.0
-        return br_text_to_float(str(value)) or 0.0
-    
-    df_vendas["Valor Vendas_float"] = df_vendas["Valor Vendas"].apply(safe_convert)
-    
-    # Filter out excluded Códigos (from 2_META)
-    mask = ~df_vendas["Código_key"].isin(excluded_codigos)
-    df_filtered = df_vendas[mask].copy()
-    
-    if len(df_filtered) == 0:
-        logging.info("No VENDAS_VENDEDOR rows after filtering 2_META Códigos.")
-        return df_calc
-    
-    # Group by Código and sum Valor Vendas across all stores
-    grouped = df_filtered.groupby("Código_key")["Valor Vendas_float"].sum().reset_index()
-    grouped = grouped.rename(columns={
-        "Código_key": "Código_calc",
-        "Valor Vendas_float": "Valor_Vendas_Total"
-    })
-    
-    # Normalize calc Código for merging
-    df_calc["Código_calc"] = df_calc["Código"].astype(str).str.strip()
-    
-    # Merge totals into calc
-    df_merged = df_calc.merge(
-        grouped,
-        on="Código_calc",
-        how="left"
-    )
-    
-    # Convert total back to Brazilian text format
-    def total_to_br_text(total):
-        if pd.isna(total) or total == 0:
-            return ""
-        return float_to_br_text_2(total)
-    
-    # Update Valor Realizado with the summed total
-    df_merged["Valor Realizado"] = df_merged["Valor_Vendas_Total"].apply(total_to_br_text)
-    
-    # Cleanup
-    df_merged = df_merged.drop(columns=["Código_calc", "Valor_Vendas_Total"])
-    
-    logging.info(f"Updated Valor Realizado for {len(grouped)} unique Códigos "
-                 f"(excluded {len(excluded_codigos)} from 2_META).")
-    
-    return df_merged'''
 
 def update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos):
     """
@@ -1931,19 +1420,6 @@ def main():
 
     df_calc = populate_valor_restante(df_calc)
     df_calc = populate_progresso(df_calc)
-
-    # df_calc = update_premiacoes_from_comissoes(sheet, df_calc)
-
-    '''# Create and populate META_GERENTE sheet
-    df_meta_gerente = populate_meta_gerente(sheet)
-    if not df_meta_gerente.empty:
-        update_meta_gerente_sheet(sheet, df_meta_gerente)
-        
-        # NEW: Update manager/trainee premiação based on META_GERENTE
-        df_calc = update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees)
-    
-    # Update premiações from COMISSOES (for non-manager/trainee rows)
-    df_calc = update_premiacoes_from_comissoes(sheet, df_calc)'''
 
     # First: Calculate premiações from COMISSOES (for everyone except managers)
     # This sets Premiação Paga, BONUS, and Premiação TOTAL for non-managers
