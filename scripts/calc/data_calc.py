@@ -1196,7 +1196,7 @@ def build_calc_base(filtered_user_df):
     calc_df = calc_df[calc_df["Função"].isin(ALLOWED_FUNCOES)]
 
     # Sort by Filial (A–Z)
-    calc_df = calc_df.sort_values(by="Filial").reset_index(drop=True)
+    calc_df = calc_df.sort_values(by=["Filial", "Colaborador"]).reset_index(drop=True)
 
     logging.info(f"Calc rows generated: {len(calc_df)}")
     return calc_df
