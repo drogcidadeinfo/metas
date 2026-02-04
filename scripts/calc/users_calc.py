@@ -121,30 +121,30 @@ class DataCombiner:
         return df
     
     def combine_data(self) -> pd.DataFrame:
-        """Combine data from user_sci and user_trier worksheets"""
+        """Combine data from users_sci and users_trier worksheets"""
         try:
             logging.info("=" * 50)
             logging.info("STARTING DATA COMBINATION")
             logging.info("=" * 50)
             
             # Get data from both worksheets
-            sci_df = self.get_sheet_data("user_sci")
-            trier_df = self.get_sheet_data("user_trier")
+            sci_df = self.get_sheet_data("users_sci")
+            trier_df = self.get_sheet_data("users_trier")
             
             # Check if DataFrames are empty
             if sci_df.empty:
-                logging.error("Worksheet 'user_sci' is empty or not found")
+                logging.error("Worksheet 'users_sci' is empty or not found")
                 return pd.DataFrame(columns=['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual'])
             
             if trier_df.empty:
-                logging.error("Worksheet 'user_trier' is empty or not found")
+                logging.error("Worksheet 'users_trier' is empty or not found")
                 return pd.DataFrame(columns=['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual'])
             
             logging.info("\n--- PREPARING SCI DATA ---")
             # Clean and rename SCI columns according to specification
-            sci_df = self._clean_cpf(sci_df, "user_sci")
-            sci_df = self._find_and_rename_column(sci_df, ['filial'], 'Filial', "user_sci")
-            sci_df = self._find_and_rename_column(sci_df, ['cargo atual', 'cargo'], 'Cargo atual', "user_sci")
+            sci_df = self._clean_cpf(sci_df, "users_sci")
+            sci_df = self._find_and_rename_column(sci_df, ['filial'], 'Filial', "users_sci")
+            sci_df = self._find_and_rename_column(sci_df, ['cargo atual', 'cargo'], 'Cargo atual', "users_sci")
             
             # Keep only needed columns from SCI
             sci_needed_cols = []
@@ -157,9 +157,9 @@ class DataCombiner:
             
             logging.info("\n--- PREPARING TRIER DATA ---")
             # Clean and rename Trier columns according to specification
-            trier_df = self._clean_cpf(trier_df, "user_trier")
-            trier_df = self._find_and_rename_column(trier_df, ['código', 'codigo'], 'Código', "user_trier")
-            trier_df = self._find_and_rename_column(trier_df, ['funcionário', 'funcionario', 'nome'], 'Funcionário', "user_trier")
+            trier_df = self._clean_cpf(trier_df, "users_trier")
+            trier_df = self._find_and_rename_column(trier_df, ['código', 'codigo'], 'Código', "users_trier")
+            trier_df = self._find_and_rename_column(trier_df, ['funcionário', 'funcionario', 'nome'], 'Funcionário', "users_trier")
             
             # Keep only needed columns from Trier
             trier_needed_cols = []
@@ -178,11 +178,11 @@ class DataCombiner:
             missing_trier = [col for col in required_trier_cols if col not in trier_df.columns]
             
             if missing_sci:
-                logging.error(f"Missing required columns in user_sci: {missing_sci}")
+                logging.error(f"Missing required columns in users_sci: {missing_sci}")
                 return pd.DataFrame(columns=['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual'])
             
             if missing_trier:
-                logging.error(f"Missing required columns in user_trier: {missing_trier}")
+                logging.error(f"Missing required columns in users_trier: {missing_trier}")
                 return pd.DataFrame(columns=['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual'])
             
             # Filter out empty CPF values
@@ -199,16 +199,16 @@ class DataCombiner:
             common_cpfs = sci_cpfs.intersection(trier_cpfs)
             
             logging.info("\n--- CPF MATCHING STATISTICS ---")
-            logging.info(f"  Unique CPFs in user_sci: {len(sci_cpfs)}")
-            logging.info(f"  Unique CPFs in user_trier: {len(trier_cpfs)}")
+            logging.info(f"  Unique CPFs in users_sci: {len(sci_cpfs)}")
+            logging.info(f"  Unique CPFs in users_trier: {len(trier_cpfs)}")
             logging.info(f"  Common CPFs (will be merged): {len(common_cpfs)}")
             
             if not common_cpfs:
                 logging.error("No common CPFs found between worksheets!")
-                logging.info("Sample CPFs from user_sci (first 5):")
+                logging.info("Sample CPFs from users_sci (first 5):")
                 if len(sci_cpfs) > 0:
                     logging.info(f"  {list(sci_cpfs)[:5]}")
-                logging.info("Sample CPFs from user_trier (first 5):")
+                logging.info("Sample CPFs from users_trier (first 5):")
                 if len(trier_cpfs) > 0:
                     logging.info(f"  {list(trier_cpfs)[:5]}")
                 return pd.DataFrame(columns=['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual'])
@@ -228,25 +228,25 @@ class DataCombiner:
             logging.info("\n--- CREATING FINAL DATAFRAME ---")
             final_df = pd.DataFrame()
             
-            # 1. Filial from user_sci
+            # 1. Filial from users_sci
             final_df['Filial'] = merged_df['Filial']
-            logging.info(f"  ✓ Filial: Copied from user_sci")
+            logging.info(f"  ✓ Filial: Copied from users_sci")
             
-            # 2. Código from user_trier
+            # 2. Código from users_trier
             final_df['Código'] = merged_df['Código']
-            logging.info(f"  ✓ Código: Copied from user_trier")
+            logging.info(f"  ✓ Código: Copied from users_trier")
             
             # 3. CPF from either (using from merged, which is common)
             final_df['CPF'] = merged_df['CPF']
             logging.info(f"  ✓ CPF: From merged data (common CPFs)")
             
-            # 4. Nome from user_trier (Funcionário column renamed to Nome)
+            # 4. Nome from users_trier (Funcionário column renamed to Nome)
             final_df['Nome'] = merged_df['Funcionário']
-            logging.info(f"  ✓ Nome: Copied from user_trier (Funcionário column)")
+            logging.info(f"  ✓ Nome: Copied from users_trier (Funcionário column)")
             
-            # 5. Cargo atual from user_sci
+            # 5. Cargo atual from users_sci
             final_df['Cargo atual'] = merged_df['Cargo atual']
-            logging.info(f"  ✓ Cargo atual: Copied from user_sci")
+            logging.info(f"  ✓ Cargo atual: Copied from users_sci")
             
             # Clean up: remove any rows with empty essential values
             rows_before = len(final_df)
