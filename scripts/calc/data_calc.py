@@ -1382,7 +1382,9 @@ def main():
         logging.warning("filtered_user source worksheet is empty.")
         return
 
-    # df_calc = build_calc_base(df_trier, df_sci)
+    # OLD: df_calc = build_calc_base(df_trier, df_sci)
+    # NEW: Use filtered_user_df instead
+    df_calc = build_calc_base(filtered_user_df)  # CHANGE THIS LINE - rename calc_base to df_calc
 
     df_trainees = read_trainees(sheet)
 
@@ -1393,7 +1395,7 @@ def main():
     # Preserve existing Meta BEFORE rebuilding
     existing_meta = read_existing_meta(sheet)
     
-    calc_base = build_calc_base(filtered_user_df)
+    # REMOVE THIS LINE: calc_base = build_calc_base(filtered_user_df)
 
     df_2_meta = read_2_meta(sheet)
     df_calc = apply_2_meta_overrides(df_calc, df_2_meta)
