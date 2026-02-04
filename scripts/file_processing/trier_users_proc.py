@@ -66,7 +66,7 @@ class GoogleSheetsUpdater:
                     raise
         raise GoogleSheetsError("Max retries reached for API call")
     
-    def update_sheet(self, df: pd.DataFrame, worksheet_name: str = "user_trier"):
+    def update_sheet(self, df: pd.DataFrame, worksheet_name: str = "users_trier"):
         """Update Google Sheet with the processed data"""
         if not self.client:
             raise GoogleSheetsError("Client not authenticated. Call authenticate() first")
@@ -247,7 +247,7 @@ def main():
         # Update Google Sheets
         sheets_updater = GoogleSheetsUpdater(gsa_credentials, sheet_id)
         sheets_updater.authenticate()
-        sheets_updater.update_sheet(processed_df, worksheet_name="user_trier")
+        sheets_updater.update_sheet(processed_df, worksheet_name="users_trier")
         
         logging.info("✓ Process completed successfully")
         return 0  # Success exit code
