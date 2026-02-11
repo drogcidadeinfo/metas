@@ -255,12 +255,6 @@ def populate_meta_gerente(sheet):
             
             # Round to handle floating point precision
             diff_rounded = round(diff, 2)
-
-            logging.info(
-                f'CMV_vendas_%={filial_data["CMV_vendas_%"]}, '
-                f'CMV_float={filial_data["CMV_float"]}, '
-                f'diff={diff_rounded}'
-            )
             
             if diff_rounded <= -2:
                 row["CMV"] = "300,00"
@@ -272,6 +266,12 @@ def populate_meta_gerente(sheet):
                 row["CMV"] = ""
         else:
             row["CMV"] = ""
+
+        logging.info(
+                f'CMV_vendas_%={filial_data["CMV_vendas_%"]}, '
+                f'CMV_float={filial_data["CMV_float"]}, '
+                f'diff={diff_rounded}'
+            )
         
         # 3. HB calculation
         if pd.notna(filial_data["Faturamento HB_float"]) and pd.notna(filial_data["HB_float"]):
