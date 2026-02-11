@@ -272,6 +272,12 @@ def populate_meta_gerente(sheet):
             else:
                 row["CMV"] = ""
         else:
+            # row["CMV"] = ""
+            logging.info(
+                f"Filial {filial} | CMV skipped (missing values): "
+                f"CMV_vendas_%={filial_data.get('CMV_vendas_%')} | "
+                f"CMV_float={filial_data.get('CMV_float')}"
+            )
             row["CMV"] = ""
         
         # 3. HB calculation
