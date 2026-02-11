@@ -253,16 +253,15 @@ def populate_meta_gerente(sheet):
         if pd.notna(filial_data["CMV_vendas_%"]) and pd.notna(filial_data["CMV_float"]):
             diff = filial_data["CMV_vendas_%"] - filial_data["CMV_float"]
             
-            logging.debug(
+            logging.info(
                 f"Filial {filial} | "
-                f"CMV_vendas_%={filial_data['CMV_vendas_%']:.4f} | "
-                f"CMV_meta={filial_data['CMV_float']:.4f} | "
-                f"diff_raw={diff:.6f}"
+                f"CMV_vendas_%={filial_data['CMV_vendas_%']} | "
+                f"CMV_meta={filial_data['CMV_float']} | "
+                f"diff_raw={diff}"
             )
+            logging.info(f"Filial {filial} | diff_rounded={diff_rounded}")
         
             diff_rounded = round(diff, 2)
-        
-            logging.debug(f"Filial {filial} | diff_rounded={diff_rounded}")
             
             if diff_rounded <= -2:
                 row["CMV"] = "300,00"
