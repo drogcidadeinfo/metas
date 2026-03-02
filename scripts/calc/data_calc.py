@@ -1442,7 +1442,7 @@ def main():
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     # df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
-    df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
+    # df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
     # df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
