@@ -189,8 +189,8 @@ def populate_meta_gerente(sheet):
     df_merged["Ticket Médio_float"] = convert_br_to_float_series(df_merged["Ticket Médio"])
     df_merged["TKT MÉDIO_float"] = convert_br_to_float_series(df_merged["TKT MÉDIO"])
     df_merged["Custo Total_float"] = convert_br_to_float_series(df_merged["Custo Total"])
-    # df_merged["CMV_float"] = convert_br_to_float_series(df_merged["CMV"])
-    df_merged["CMV_float"] = df_merged["CMV"]
+    df_merged["CMV_float"] = convert_br_to_float_series(df_merged["CMV"])
+    # df_merged["CMV_float"] = df_merged["CMV"]
     logging.info(df_merged["CMV_float"])
     
     # Calculate CMV % from VENDAS_FILIAL
