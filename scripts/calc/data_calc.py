@@ -280,7 +280,7 @@ def populate_meta_gerente(sheet):
                 row["CMV"] = "300,00"
             elif diff_rounded <= -1:
                 row["CMV"] = "250,00"
-            elif diff_rounded == 0:
+            elif diff_rounded <= 0:
                 row["CMV"] = "200,00"
             else:
                 row["CMV"] = ""
