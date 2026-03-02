@@ -180,6 +180,17 @@ def populate_meta_gerente(sheet):
     def convert_br_to_float_series(series):
         """Convert Brazilian number strings to float"""
         return series.apply(br_text_to_float)
+
+    def percent_br_to_float(series):
+    return (
+        series
+        .astype(str)
+        .str.replace("%", "", regex=False)
+        .str.replace(",", ".", regex=False)
+        .str.strip()
+        .replace("", None)
+        .astype(float)
+    )
     
     # Convert required columns
     df_merged["Faturamento Total_float"] = convert_br_to_float_series(df_merged["Faturamento Total"])
@@ -190,7 +201,7 @@ def populate_meta_gerente(sheet):
     df_merged["TKT MÉDIO_float"] = convert_br_to_float_series(df_merged["TKT MÉDIO"])
     df_merged["Custo Total_float"] = convert_br_to_float_series(df_merged["Custo Total"])
     # df_merged["CMV_float"] = convert_br_to_float_series(df_merged["CMV"])
-    df_merged["CMV_float"] = df_merged["CMV"]
+    df_merged["CMV_float"] = percent_br_to_float(df_merged["CMV"])
     logging.info(df_merged["CMV_float"])
     
     # Calculate CMV % from VENDAS_FILIAL
