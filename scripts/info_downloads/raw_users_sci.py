@@ -211,6 +211,12 @@ class SCIDownloader:
             self.wait.until(EC.element_to_be_clickable(
                 (By.XPATH, '//*[@id="btLoginPrincipal"]')
             )).click()
+            time.sleep(2)
+
+            self.wait.until(EC.element_to_be_clickable(
+                (By.XPATH, '//*[@id="container"]/div[2]/button[1]')
+            )).click()
+            time.sleep(2)
             
             # Click RH net social
             self.wait.until(EC.element_to_be_clickable(
