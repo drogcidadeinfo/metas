@@ -88,6 +88,59 @@ def float_to_br_text(value):
     int_str = f"{integer_part:,}".replace(",", ".")
     return f"{int_str},{decimal_part:02d}"
 
+def read_existing_valor_realizado(sheet):
+    """
+    Reads existing calc sheet and returns {ID: Valor Realizado}
+    """
+    try:
+        ws = sheet.worksheet("calc")
+    except gspread.exceptions.WorksheetNotFound:
+        logging.info("calc sheet does not exist yet — no Valor Realizado to preserve.")
+        return {}
+
+    values = ws.get_all_values()
+    if not values:
+        return {}
+
+    headers = values[0]
+
+    if "ID" not in headers or "Valor Realizado" not in headers:
+        logging.warning("Existing calc has no ID or Valor Realizado column.")
+        return {}
+
+    df_existing = pd.DataFrame(values[1:], columns=headers)
+
+    valor_realizado_map = {}
+
+    for _, row in df_existing.iterrows():
+        row_id = str(row["ID"]).strip()
+        valor_realizado = str(row["Valor Realizado"]).strip()
+
+        if row_id and valor_realizado:
+            valor_realizado_map[row_id] = valor_realizado
+
+    logging.info(f"Preserved Valor Realizado values: {len(valor_realizado_map)}")
+    return valor_realizado_map
+
+def restore_valor_realizado(df_calc, valor_realizado_map):
+    """
+    Restore Valor Realizado values into df_calc using ID as key
+    """
+    if not valor_realizado_map:
+        logging.info("No Valor Realizado values to restore.")
+        return df_calc
+
+    df_calc["ID_key"] = df_calc["ID"].astype(str).str.strip()
+
+    # Only restore values where the map has an entry, otherwise leave empty
+    # (they'll be populated by the automatic calculation)
+    df_calc["Valor Realizado"] = df_calc["ID_key"].map(valor_realizado_map).fillna("")
+
+    df_calc = df_calc.drop(columns=["ID_key"])
+
+    logging.info("Valor Realizado column restored successfully.")
+    return df_calc
+
 def populate_meta_gerente(sheet):
     """
     Populate META_GERENTE worksheet with calculations based on VENDAS_FILIAL,
@@ -1420,6 +1473,7 @@ def main():
 
     # Preserve existing Meta BEFORE rebuilding
     existing_meta = read_existing_meta(sheet)
+    existing_valor_realizado = read_existing_valor_realizado(sheet)  # NEW LINE
     
     # REMOVE THIS LINE: calc_base = build_calc_base(filtered_user_df)
 
@@ -1433,6 +1487,7 @@ def main():
     
     # Restore Meta AFTER rebuilding
     df_calc = restore_meta(df_calc, existing_meta)
+    df_calc = restore_valor_realizado(df_calc, existing_valor_realizado)
 
     if df_calc.empty:
         logging.warning("Calc dataframe is empty. Nothing to upload.")
