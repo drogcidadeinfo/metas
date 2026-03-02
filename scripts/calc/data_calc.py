@@ -189,8 +189,8 @@ def populate_meta_gerente(sheet):
     df_merged["Ticket Médio_float"] = convert_br_to_float_series(df_merged["Ticket Médio"])
     df_merged["TKT MÉDIO_float"] = convert_br_to_float_series(df_merged["TKT MÉDIO"])
     df_merged["Custo Total_float"] = convert_br_to_float_series(df_merged["Custo Total"])
-    # df_merged["CMV_float"] = convert_br_to_float_series(df_merged["CMV"])
-    df_merged["CMV_float"] = df_merged["CMV"] * 100
+    df_merged["CMV_float"] = convert_br_to_float_series(df_merged["CMV"])
+    df_merged["CMV_float"] = df_merged["CMV_float"] * 100
     logging.info(df_merged["CMV_float"])
     
     # Calculate CMV % from VENDAS_FILIAL
@@ -261,9 +261,9 @@ def populate_meta_gerente(sheet):
                 f"CMV_meta={filial_data['CMV_float']} | "
                 f"diff_raw={diff}"
             )
-            logging.info(f"Filial {filial} | diff_rounded={diff_rounded}")
-        
             diff_rounded = round(diff, 2)
+            
+            logging.info(f"Filial {filial} | diff_rounded={diff_rounded}")
             
             if diff_rounded <= -2:
                 row["CMV"] = "300,00"
