@@ -182,15 +182,15 @@ def populate_meta_gerente(sheet):
         return series.apply(br_text_to_float)
 
     def percent_br_to_float(series):
-    return (
-        series
-        .astype(str)
-        .str.replace("%", "", regex=False)
-        .str.replace(",", ".", regex=False)
-        .str.strip()
-        .replace("", None)
-        .astype(float)
-    )
+        return (
+            series
+            .astype(str)
+            .str.replace("%", "", regex=False)
+            .str.replace(",", ".", regex=False)
+            .str.strip()
+            .replace("", None)
+            .astype(float)
+        )
     
     # Convert required columns
     df_merged["Faturamento Total_float"] = convert_br_to_float_series(df_merged["Faturamento Total"])
