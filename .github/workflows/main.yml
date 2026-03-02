@@ -43,7 +43,7 @@ jobs:
         env:
           sci_user: ${{ secrets.SCI_USER }}
           sci_password: ${{ secrets.SCI_PASSWORD }}
-       run: python scripts/info_downloads/raw_users_sci.py
+        run: python scripts/info_downloads/raw_users_sci.py
 
       - name: users_sci procUp to google sheets
         env:
