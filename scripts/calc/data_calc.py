@@ -1473,7 +1473,7 @@ def main():
 
     # Preserve existing Meta BEFORE rebuilding
     existing_meta = read_existing_meta(sheet)
-    existing_valor_realizado = read_existing_valor_realizado(sheet)  # NEW LINE
+    # existing_valor_realizado = read_existing_valor_realizado(sheet)  # NEW LINE
     
     # REMOVE THIS LINE: calc_base = build_calc_base(filtered_user_df)
 
@@ -1487,7 +1487,7 @@ def main():
     
     # Restore Meta AFTER rebuilding
     df_calc = restore_meta(df_calc, existing_meta)
-    df_calc = restore_valor_realizado(df_calc, existing_valor_realizado)
+    # df_calc = restore_valor_realizado(df_calc, existing_valor_realizado)
 
     if df_calc.empty:
         logging.warning("Calc dataframe is empty. Nothing to upload.")
@@ -1497,7 +1497,7 @@ def main():
 
     # NEW STEP: Update Valor Realizado from VENDAS_VENDEDOR
     # df_calc = update_valor_realizado_from_vendas(sheet, df_calc)
-    # df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
+    df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
     # df_calc = populate_meta_for_testing(df_calc)
 
     df_calc = populate_valor_restante(df_calc)
