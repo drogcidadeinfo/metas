@@ -81,7 +81,7 @@ try:
         data_fim = mes_anterior.strftime('%d/%m/%Y')  # Último dia do mês anterior
     else:
         data_inicio = today.replace(day=1).strftime('%d/%m/%Y')  # Primeiro dia do mês atual
-        data_fim = (today - timedelta(days=1)).strftime('%d/%m/%Y')  # Ontem
+        data_fim = today.strftime('%d/%m/%Y')  # hj
 
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="dat_inicial"]'))).send_keys(data_inicio) # (data_inicio)
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="dat_fim"]'))).send_keys(data_fim) # (data_fim)
