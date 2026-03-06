@@ -1,4 +1,4 @@
-name: data_metas_up
+name: vendas hb teste
 
 on:
   workflow_dispatch:
