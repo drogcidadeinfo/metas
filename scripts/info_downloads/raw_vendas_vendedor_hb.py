@@ -101,7 +101,7 @@ try:
         
     for codigo in departamentos:
             input_element = WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.ID, "cod_deptoEntrada"))
+                EC.presence_of_element_located((By.ID, "cod_tipoEntrada"))
             )
             input_element.send_keys(codigo)
             input_element.send_keys(Keys.ENTER)
