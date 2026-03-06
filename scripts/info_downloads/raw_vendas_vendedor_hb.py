@@ -29,7 +29,7 @@ download_dir = os.getcwd()
 
 # set up chrome options for headless mode/configure download behavior
 chrome_options = Options()
-# chrome_options.add_argument("--headless")  
+chrome_options.add_argument("--headless")  
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--window-size=1920,1080")  # Set dimensions
