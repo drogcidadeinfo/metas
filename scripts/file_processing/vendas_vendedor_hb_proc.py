@@ -137,8 +137,42 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
         "Colaborador": "Vendedor",
     })
 
+    # === BEGIN MODIFICATIONS ===
+    
+    # 1. Drop the Filial column
+    if "Filial" in df.columns:
+        df = df.drop(columns=["Filial"])
+        logging.info("Dropped 'Filial' column")
+    
+    # 2. Delete all rows where Código is 548, 300, or 3
+    codes_to_remove = [548, 300, 3]
+    initial_row_count = len(df)
+    df = df[~df["Código"].astype(int).isin(codes_to_remove)]
+    removed_count = initial_row_count - len(df)
+    logging.info(f"Removed {removed_count} rows with codes {codes_to_remove}")
+    
+    # 3. Check for duplicate Código values and sum Valor Vendas
+    # First, ensure Valor Vendas is numeric for summation
+    df["Valor Vendas"] = pd.to_numeric(df["Valor Vendas"], errors='coerce')
+    
+    # Group by Código and sum the Valor Vendas, keeping the first occurrence of other columns
+    # We'll use the first occurrence of Vendedor and other columns (except Valor Vendas)
+    duplicate_count = len(df) - len(df["Código"].unique())
+    if duplicate_count > 0:
+        logging.info(f"Found {duplicate_count} duplicate Código values. Summing Valor Vendas...")
+        
+        # Define aggregation: sum Valor Vendas, keep first for other columns
+        agg_funcs = {col: 'first' for col in df.columns if col != 'Valor Vendas'}
+        agg_funcs['Valor Vendas'] = 'sum'
+        
+        df = df.groupby('Código', as_index=False).agg(agg_funcs)
+        logging.info(f"After grouping duplicates: {len(df)} rows remaining")
+    else:
+        logging.info("No duplicate Código values found")
+    
+    # === END MODIFICATIONS ===
+
     COLUMN_ORDER = [
-    "Filial",
     "Código",
     "Vendedor",
     "Valor Vendas",
@@ -150,7 +184,7 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
 
     start_cell = "A1"
     end_row = len(df) + 1
-    end_cell = f"G{end_row}"
+    end_cell = f"C{end_row}"  # Changed from G to C since we only have 3 columns now
     dynamic_range = f"{start_cell}:{end_cell}"
 
     worksheet.batch_clear([dynamic_range])
