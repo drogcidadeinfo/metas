@@ -93,10 +93,10 @@ try:
     
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "tabTabdhtmlgoodies_tabView1_2"))).click()
     time.sleep(2)
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "consid_depto_false"))).click()
+    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "consid_tipo_false"))).click()
     time.sleep(2)
     departamentos = [
-            "20", "33", "116"
+            "20", "39", "115"
         ]
         
     for codigo in departamentos:
