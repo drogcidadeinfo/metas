@@ -91,7 +91,7 @@ try:
             input_element.send_keys(Keys.ENTER)
             time.sleep(2)
     
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "tabTabdhtmlgoodies_tabView1_2"))).click()
+    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "tabTabdhtmlgoodies_tabView1_3"))).click()
     time.sleep(2)
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "consid_tipo_false"))).click()
     time.sleep(2)
