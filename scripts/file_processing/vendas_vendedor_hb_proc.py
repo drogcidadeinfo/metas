@@ -153,7 +153,7 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     
     # 3. Check for duplicate Código values and sum Valor Vendas
     # First, ensure Valor Vendas is numeric for summation
-    df["Valor Vendas"] = pd.to_numeric(df["Valor Vendas"], errors='coerce')
+    # df["Valor Vendas"] = pd.to_numeric(df["Valor Vendas"], errors='coerce')
     
     # Group by Código and sum the Valor Vendas, keeping the first occurrence of other columns
     # We'll use the first occurrence of Vendedor and other columns (except Valor Vendas)
