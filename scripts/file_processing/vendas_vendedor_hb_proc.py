@@ -96,14 +96,28 @@ def process_excel_data(file_path):
             continue
 
         if codigo_raw.isdigit():
+            # Convert Valor Vendas from Brazilian format to float
+            valor_vendas = row.get("valor vendas", 0)
+            if pd.notna(valor_vendas) and valor_vendas != "":
+                try:
+                    # Handle Brazilian number format: 1.234,56 -> 1234.56
+                    if isinstance(valor_vendas, str):
+                        # Remove dots (thousand separators) and replace comma with dot
+                        valor_vendas = valor_vendas.replace('.', '').replace(',', '.')
+                    valor_vendas = float(valor_vendas)
+                except (ValueError, TypeError):
+                    valor_vendas = 0
+            else:
+                valor_vendas = 0
+                
             data.append({
-                "Código": codigo_raw,
+                "Código": int(codigo_raw),  # Store as int for proper grouping
                 "Filial": current_filial,
                 "Colaborador": row.get("vendedor"),
                 "Qtd Vendas": format_qtd_vendas(row.get("qtd. vendas")),
                 "Coluna Vazia": "",
                 "Valor Custo": row.get("valor custo"),
-                "Faturamento": row.get("valor vendas"),
+                "Faturamento": valor_vendas,  # Store as float
             })
 
     result_df = pd.DataFrame(data)
@@ -147,16 +161,15 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     # 2. Delete all rows where Código is 548, 300, or 3
     codes_to_remove = [548, 300, 3]
     initial_row_count = len(df)
-    df = df[~df["Código"].astype(int).isin(codes_to_remove)]
+    df = df[~df["Código"].isin(codes_to_remove)]
     removed_count = initial_row_count - len(df)
     logging.info(f"Removed {removed_count} rows with codes {codes_to_remove}")
     
     # 3. Check for duplicate Código values and sum Valor Vendas
-    # First, ensure Valor Vendas is numeric for summation
-    df["Valor Vendas"] = pd.to_numeric(df["Valor Vendas"], errors='coerce')
+    # Convert Valor Vendas to numeric for summation (NOW UNCOMMENTED)
+    df["Valor Vendas"] = pd.to_numeric(df["Valor Vendas"], errors='coerce').fillna(0)
     
     # Group by Código and sum the Valor Vendas, keeping the first occurrence of other columns
-    # We'll use the first occurrence of Vendedor and other columns (except Valor Vendas)
     duplicate_count = len(df) - len(df["Código"].unique())
     if duplicate_count > 0:
         logging.info(f"Found {duplicate_count} duplicate Código values. Summing Valor Vendas...")
@@ -173,18 +186,23 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     # === END MODIFICATIONS ===
 
     COLUMN_ORDER = [
-    "Código",
-    "Vendedor",
-    "Valor Vendas",
+        "Código",
+        "Vendedor",
+        "Valor Vendas",
     ]
 
     df = df[COLUMN_ORDER]
+
+    # Format the Valor Vendas for display (Brazilian format)
+    df["Valor Vendas"] = df["Valor Vendas"].apply(
+        lambda x: f"{x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    )
 
     values = [df.columns.tolist()] + df.values.tolist()
 
     start_cell = "A1"
     end_row = len(df) + 1
-    end_cell = f"C{end_row}"  # Changed from G to C since we only have 3 columns now
+    end_cell = f"C{end_row}"
     dynamic_range = f"{start_cell}:{end_cell}"
 
     worksheet.batch_clear([dynamic_range])
