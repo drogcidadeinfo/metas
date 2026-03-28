@@ -91,16 +91,21 @@ try:
         data_fim = today.strftime('%d/%m/%Y')  # hj
 
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "dat_inicio"))).send_keys(data_inicio) # (data_inicio)
+    time.sleep(2)
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "dat_fim"))).send_keys(data_fim) # (data_fim)
+    time.sleep(2)
     print(f"Período configurado: {data_inicio} a {data_fim}", flush=True)
 
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="selecaoI"]'))).click()
+    time.sleep(2)
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="selecaoI"]/option[12]'))).click()
+    time.sleep(2)
 
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "tabTabdhtmlgoodies_tabView1_5"))).click()
     time.sleep(2)
   
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "saida4"))).click()
+    time.sleep(2)
 
     # trigger report download
     logging.info("Triggering report download...")
@@ -109,7 +114,7 @@ try:
     # log download start
     logging.info("Download has started.")
     # wait for download to complete
-    time.sleep(50)
+    time.sleep(70)
 
     # get the most recent downloaded file
     files = os.listdir(download_dir)
