@@ -22,8 +22,8 @@ password = os.getenv("trier_password")
 if not username or not password:
     raise ValueError("Environment variables 'user' and/or 'password' not set.")
 
-inicio = (datetime.now() - timedelta(days=365)).strftime("%d%m%Y")
-fim = datetime.now().strftime("%d%m%Y")  
+# inicio = (datetime.now() - timedelta(days=365)).strftime("%d%m%Y")
+# fim = datetime.now().strftime("%d%m%Y")  
 
 download_dir = os.getcwd()  
 
