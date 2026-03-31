@@ -178,39 +178,6 @@ def add_forty_percent_to_realizado(df_calc, forty_percent_map):
     logging.info(f"VR + 40% APP column now contains the SUM of Valor Realizado + 40% VT")
     return df_calc
 
-def populate_vr_plus_40_restante(df_calc):
-    """
-    Calculate Valor Restante using VR + 40% APP instead of Valor Realizado
-    This replaces the old populate_valor_restante function
-    """
-    logging.info("Calculating Valor Restante (Meta - VR + 40% APP)...")
-
-    def calculate_row(row):
-        meta = br_text_to_float(row["Meta"])
-        # Use VR + 40% APP instead of Valor Realizado
-        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
-
-        # If Meta is empty → do nothing
-        if meta is None:
-            return ""
-
-        # If VR + 40% APP empty → treat as zero
-        if vr_plus_40 is None:
-            vr_plus_40 = 0.0
-
-        restante = meta - vr_plus_40
-
-        # Negative → wrap in ()
-        if restante < 0:
-            return f"({float_to_br_text_2(abs(restante))})"
-
-        return float_to_br_text_2(restante)
-
-    df_calc["Valor Restante"] = df_calc.apply(calculate_row, axis=1)
-
-    logging.info("Valor Restante populated using VR + 40% APP.")
-    return df_calc
-
 def read_existing_valor_realizado(sheet):
     """
     Reads existing calc sheet and returns {ID: Valor Realizado}
@@ -1627,7 +1594,6 @@ def build_calc_base(filtered_user_df):
         "Meta": "",
         "Valor Realizado": "",
         "VR + 40% APP": "",  # NEW COLUMN - will hold Valor Realizado + 40% VT
-        "Valor Restante": "",
         "Progresso": "",
         "Função": df["Função_calc"],
         "Premiação Acomul.": "",
@@ -1876,7 +1842,7 @@ def main():
     df_calc = add_forty_percent_to_realizado(df_calc, forty_percent_map)
 
     # Step 3: Calculate Valor Restante using VR + 40% APP (replaces old populate_valor_restante)
-    df_calc = populate_vr_plus_40_restante(df_calc)
+    # df_calc = populate_vr_plus_40_restante(df_calc)
 
     # Step 4: Calculate Progresso using VR + 40% APP
     df_calc = populate_progresso(df_calc)
