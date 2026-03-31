@@ -88,6 +88,129 @@ def float_to_br_text(value):
     int_str = f"{integer_part:,}".replace(",", ".")
     return f"{int_str},{decimal_part:02d}"
 
+def read_vendas_548(sheet):
+    """
+    Read VENDAS_548 worksheet and return a mapping from Filial to 40% VT value
+    """
+    try:
+        df = read_worksheet_as_df(sheet, "VENDAS_548")
+    except gspread.exceptions.WorksheetNotFound:
+        logging.info("VENDAS_548 sheet not found — skipping 40% VT addition.")
+        return {}
+
+    if df.empty:
+        logging.info("VENDAS_548 is empty — skipping 40% VT addition.")
+        return {}
+
+    df.columns = df.columns.str.strip()
+    
+    # Ensure required columns exist
+    if "Filial" not in df.columns or "40% VT" not in df.columns:
+        logging.warning("VENDAS_548 missing required columns (Filial or 40% VT).")
+        return {}
+    
+    # Create mapping from Filial to 40% VT value (as float)
+    forty_percent_map = {}
+    
+    for _, row in df.iterrows():
+        filial = str(row["Filial"]).strip()
+        forty_percent_value = br_text_to_float(row["40% VT"])
+        
+        if forty_percent_value is not None:
+            # If multiple rows for same Filial, sum them
+            if filial in forty_percent_map:
+                forty_percent_map[filial] += forty_percent_value
+            else:
+                forty_percent_map[filial] = forty_percent_value
+    
+    logging.info(f"Loaded 40% VT mapping for {len(forty_percent_map)} Filials")
+    return forty_percent_map
+
+def add_forty_percent_to_realizado(df_calc, forty_percent_map):
+    """
+    Add 40% VT value from VENDAS_548 to Valor Realizado for non-manager rows
+    and create VR + 40% APP column with the SUM value (Valor Realizado + 40% VT)
+    """
+    if not forty_percent_map:
+        logging.info("No 40% VT data available — VR + 40% APP = Valor Realizado")
+        df_calc["VR + 40% APP"] = df_calc["Valor Realizado"]
+        return df_calc
+    
+    # Define manager functions that should NOT get the 40% addition
+    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
+    
+    # Create the VR + 40% APP column as the sum of Valor Realizado + 40% VT
+    # Start with a copy of Valor Realizado
+    df_calc["VR + 40% APP"] = df_calc["Valor Realizado"].copy()
+    
+    # Normalize Filial for matching
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    
+    rows_updated = 0
+    
+    for idx, row in df_calc.iterrows():
+        funcao = str(row.get("Função", "")).strip().upper()
+        filial = str(row.get("Filial_key", "")).strip()
+        
+        # Skip managers
+        if funcao in manager_funcoes:
+            continue
+        
+        # Check if we have 40% VT value for this Filial
+        if filial in forty_percent_map:
+            # Get current Valor Realizado as float
+            valor_realizado = br_text_to_float(row.get("Valor Realizado", ""))
+            if valor_realizado is None:
+                valor_realizado = 0.0
+            
+            # Add 40% VT value to get the SUM
+            forty_percent_value = forty_percent_map[filial]
+            sum_value = valor_realizado + forty_percent_value
+            
+            # Store the SUM in VR + 40% APP column
+            df_calc.at[idx, "VR + 40% APP"] = float_to_br_text_2(sum_value)
+            rows_updated += 1
+    
+    # Clean up temporary column
+    df_calc = df_calc.drop(columns=["Filial_key"])
+    
+    logging.info(f"Added 40% VT to {rows_updated} rows (managers excluded)")
+    logging.info(f"VR + 40% APP column now contains the SUM of Valor Realizado + 40% VT")
+    return df_calc
+
+def populate_vr_plus_40_restante(df_calc):
+    """
+    Calculate Valor Restante using VR + 40% APP instead of Valor Realizado
+    This replaces the old populate_valor_restante function
+    """
+    logging.info("Calculating Valor Restante (Meta - VR + 40% APP)...")
+
+    def calculate_row(row):
+        meta = br_text_to_float(row["Meta"])
+        # Use VR + 40% APP instead of Valor Realizado
+        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
+
+        # If Meta is empty → do nothing
+        if meta is None:
+            return ""
+
+        # If VR + 40% APP empty → treat as zero
+        if vr_plus_40 is None:
+            vr_plus_40 = 0.0
+
+        restante = meta - vr_plus_40
+
+        # Negative → wrap in ()
+        if restante < 0:
+            return f"({float_to_br_text_2(abs(restante))})"
+
+        return float_to_br_text_2(restante)
+
+    df_calc["Valor Restante"] = df_calc.apply(calculate_row, axis=1)
+
+    logging.info("Valor Restante populated using VR + 40% APP.")
+    return df_calc
+
 def read_existing_valor_realizado(sheet):
     """
     Reads existing calc sheet and returns {ID: Valor Realizado}
@@ -139,94 +262,6 @@ def restore_valor_realizado(df_calc, valor_realizado_map):
     df_calc = df_calc.drop(columns=["ID_key"])
 
     logging.info("Valor Realizado column restored successfully.")
-    return df_calc
-
-def read_vendas_548(sheet):
-    """
-    Read VENDAS_548 worksheet and return a mapping from Filial to 40% VT value
-    """
-    try:
-        df = read_worksheet_as_df(sheet, "VENDAS_548")
-    except gspread.exceptions.WorksheetNotFound:
-        logging.info("VENDAS_548 sheet not found — skipping 40% VT addition.")
-        return {}
-
-    if df.empty:
-        logging.info("VENDAS_548 is empty — skipping 40% VT addition.")
-        return {}
-
-    df.columns = df.columns.str.strip()
-    
-    # Ensure required columns exist
-    if "Filial" not in df.columns or "40% VT" not in df.columns:
-        logging.warning("VENDAS_548 missing required columns (Filial or 40% VT).")
-        return {}
-    
-    # Create mapping from Filial to 40% VT value (as float)
-    forty_percent_map = {}
-    
-    for _, row in df.iterrows():
-        filial = str(row["Filial"]).strip()
-        forty_percent_value = br_text_to_float(row["40% VT"])
-        
-        if forty_percent_value is not None:
-            # If multiple rows for same Filial, sum them
-            if filial in forty_percent_map:
-                forty_percent_map[filial] += forty_percent_value
-            else:
-                forty_percent_map[filial] = forty_percent_value
-    
-    logging.info(f"Loaded 40% VT mapping for {len(forty_percent_map)} Filials")
-    return forty_percent_map
-
-def add_forty_percent_to_realizado(df_calc, forty_percent_map):
-    """
-    Add 40% VT value from VENDAS_548 to Valor Realizado for non-manager rows
-    and create VR + 40% APP column
-    """
-    if not forty_percent_map:
-        logging.info("No 40% VT data available — skipping addition.")
-        df_calc["VR + 40% APP"] = df_calc["Valor Realizado"]
-        return df_calc
-    
-    # Define manager functions that should NOT get the 40% addition
-    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
-    
-    # Create a copy of Valor Realizado as base for the new column
-    df_calc["VR + 40% APP"] = df_calc["Valor Realizado"].copy()
-    
-    # Normalize Filial for matching
-    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
-    
-    rows_updated = 0
-    
-    for idx, row in df_calc.iterrows():
-        funcao = str(row.get("Função", "")).strip().upper()
-        filial = str(row.get("Filial_key", "")).strip()
-        
-        # Skip managers
-        if funcao in manager_funcoes:
-            continue
-        
-        # Check if we have 40% VT value for this Filial
-        if filial in forty_percent_map:
-            # Get current Valor Realizado as float
-            valor_realizado = br_text_to_float(row.get("Valor Realizado", ""))
-            if valor_realizado is None:
-                valor_realizado = 0.0
-            
-            # Add 40% VT value
-            forty_percent_value = forty_percent_map[filial]
-            new_value = valor_realizado + forty_percent_value
-            
-            # Update the VR + 40% APP column
-            df_calc.at[idx, "VR + 40% APP"] = float_to_br_text_2(new_value)
-            rows_updated += 1
-    
-    # Clean up temporary column
-    df_calc = df_calc.drop(columns=["Filial_key"])
-    
-    logging.info(f"Added 40% VT to {rows_updated} rows (managers excluded)")
     return df_calc
 
 def populate_meta_gerente(sheet):
@@ -895,65 +930,32 @@ def float_to_br_text_2(value):
     except Exception:
         return ""
 
-# COMMENTED OUT: Old Valor Restante function - replaced by VR + 40% APP column
-# def populate_valor_restante(df_calc):
-#     logging.info("Calculating Valor Restante (Meta - Valor Realizado)...")
-# 
-#     def calculate_row(row):
-#         meta = br_text_to_float(row["Meta"])
-#         realizado = br_text_to_float(row["Valor Realizado"])
-# 
-#         # If Meta is empty → do nothing
-#         if meta is None:
-#             return ""
-# 
-#         # If Valor Realizado empty → treat as zero
-#         if realizado is None:
-#             realizado = 0.0
-# 
-#         restante = meta - realizado
-# 
-#         # Negative → wrap in ()
-#         if restante < 0:
-#             return f"({float_to_br_text(restante)})"
-# 
-#         return float_to_br_text(restante)
-# 
-#     df_calc["Valor Restante"] = df_calc.apply(calculate_row, axis=1)
-# 
-#     logging.info("Valor Restante populated.")
-#     return df_calc
+def populate_valor_restante(df_calc):
+    logging.info("Calculating Valor Restante (Meta - Valor Realizado)...")
 
-# NEW: Function to populate VR + 40% APP column (replaces Valor Restante)
-def populate_vr_plus_forty_percent(df_calc):
-    logging.info("Calculating VR + 40% APP (Meta - (Valor Realizado + 40% VT))...")
-    
-    # This function uses the existing "VR + 40% APP" column (already containing Valor Realizado + 40% VT)
-    # and calculates the remaining amount needed to reach Meta
-    
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
-        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
-        
+        realizado = br_text_to_float(row["Valor Realizado"])
+
         # If Meta is empty → do nothing
         if meta is None:
             return ""
-        
-        # If VR + 40% APP is empty → treat as zero
-        if vr_plus_40 is None:
-            vr_plus_40 = 0.0
-        
-        restante = meta - vr_plus_40
-        
+
+        # If Valor Realizado empty → treat as zero
+        if realizado is None:
+            realizado = 0.0
+
+        restante = meta - realizado
+
         # Negative → wrap in ()
         if restante < 0:
             return f"({float_to_br_text(restante)})"
-        
+
         return float_to_br_text(restante)
-    
-    df_calc["VR + 40% APP"] = df_calc.apply(calculate_row, axis=1)
-    
-    logging.info("VR + 40% APP populated.")
+
+    df_calc["Valor Restante"] = df_calc.apply(calculate_row, axis=1)
+
+    logging.info("Valor Restante populated.")
     return df_calc
 
 def remove_colaborador(df, nome):
@@ -992,7 +994,7 @@ def br_text_to_float(value):
     except:
         return None
 
-def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
+'''def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     """
     Update premiações using COMISSOES.
 
@@ -1077,7 +1079,7 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     df["is_trainee"] = df["ID"].astype(str).str.strip().isin(trainee_ids)
 
     # -------------------------------
-    # Calculations - NOW USING VR + 40% APP INSTEAD OF Valor Realizado
+    # Calculations
     # -------------------------------
     def calculate_row(row):
         comissao_txt = row.get("Valor Comissão_str", "")
@@ -1091,8 +1093,7 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
             return pd.Series([premiacao_acumulada, "", "", ""])
 
         meta = br_text_to_float(row.get("Meta", ""))
-        # CHANGED: Use VR + 40% APP instead of Valor Realizado
-        realizado = br_text_to_float(row.get("VR + 40% APP", ""))
+        realizado = br_text_to_float(row.get("Valor Realizado", ""))
 
         # Defaults
         premiacao_paga = ""
@@ -1144,12 +1145,39 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     ])
 
     logging.info("Premiações updated successfully (COMISSOES aggregated by Código).")
-    return df
+    return df'''
+
+'''def populate_progresso(df_calc):
+    logging.info("Calculating Progresso (Valor Realizado / Meta)...")
+
+    def calculate_row(row):
+        meta = br_text_to_float(row["Meta"])
+        realizado = br_text_to_float(row["Valor Realizado"])
+
+        # If Meta is empty or zero → do nothing
+        if meta is None or meta == 0:
+            return ""
+
+        # If Valor Realizado empty → treat as zero
+        if realizado is None:
+            realizado = 0.0
+
+        progresso = (realizado / meta) * 100
+
+        # Format as Brazilian percentage text
+        progresso = round(progresso, 2)
+        inteiro = int(progresso)
+        decimal = int(round((progresso - inteiro) * 100))
+
+        return f"{inteiro},{decimal:02d}%"
+
+    df_calc["Progresso"] = df_calc.apply(calculate_row, axis=1)
+
+    logging.info("Progresso populated.")
+    return df_calc'''
 
 def populate_progresso(df_calc):
     logging.info("Calculating Progresso (VR + 40% APP / Meta)...")
-    
-    # CHANGED: Now uses VR + 40% APP instead of Valor Realizado
 
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
@@ -1175,8 +1203,154 @@ def populate_progresso(df_calc):
 
     df_calc["Progresso"] = df_calc.apply(calculate_row, axis=1)
 
-    logging.info("Progresso populated.")
+    logging.info("Progresso populated using VR + 40% APP.")
     return df_calc
+
+def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
+    """
+    Update premiações using COMISSOES.
+    Uses VR + 40% APP instead of Valor Realizado for calculations.
+    """
+    logging.info("Updating premiações from COMISSOES (with Código aggregation)...")
+
+    df_com = read_worksheet_as_df(sheet, "COMISSOES")
+
+    if df_com.empty:
+        logging.warning("COMISSOES worksheet is empty.")
+        return df_calc
+
+    df_com.columns = df_com.columns.str.strip()
+
+    required_cols = ["Código", "Valor Comissão"]
+    for col in required_cols:
+        if col not in df_com.columns:
+            logging.warning(f"Column '{col}' not found in COMISSOES.")
+            return df_calc
+
+    # Get list of IDs from TRAINEES sheet
+    trainee_ids = set()
+    if not df_trainees.empty and "ID" in df_trainees.columns:
+        trainee_ids = set(df_trainees["ID"].astype(str).str.strip().unique())
+
+    # Define which functions are managers
+    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
+
+    # Normalize Código keys in COMISSOES
+    df_com["Código_key"] = (
+        df_com["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    # Convert "Valor Comissão" to float for summing
+    def safe_comissao_to_float(v):
+        if v is None or str(v).strip() == "":
+            return 0.0
+        return br_text_to_float(str(v)) or 0.0
+
+    df_com["Valor Comissão_float"] = df_com["Valor Comissão"].apply(safe_comissao_to_float)
+
+    # Group by Código and sum all commissions
+    df_com_grouped = (
+        df_com.groupby("Código_key", as_index=False)["Valor Comissão_float"]
+        .sum()
+        .rename(columns={"Valor Comissão_float": "Valor_Comissao_Total"})
+    )
+
+    # Prepare calc keys
+    df = df_calc.copy()
+    df["Código_key"] = (
+        df["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .str.strip()
+    )
+
+    # Merge aggregated commission totals into calc by Código
+    df = df.merge(df_com_grouped, on="Código_key", how="left")
+
+    # Helper: float → BR text (blank if missing/zero)
+    def total_to_br_text(total):
+        if total is None or pd.isna(total) or float(total) == 0.0:
+            return ""
+        return float_to_br_text_2(total)
+
+    df["Valor Comissão_str"] = df["Valor_Comissao_Total"].apply(total_to_br_text)
+
+    # Determine which rows are managers and which are trainees
+    df["is_manager"] = df["Função"].astype(str).str.strip().str.upper().isin(manager_funcoes)
+    df["is_trainee"] = df["ID"].astype(str).str.strip().isin(trainee_ids)
+
+    # -------------------------------
+    # Calculations - USING VR + 40% APP
+    # -------------------------------
+    def calculate_row(row):
+        comissao_txt = row.get("Valor Comissão_str", "")
+        comissao = br_text_to_float(comissao_txt)
+
+        # Always show accumulated commission when we have it (including managers)
+        premiacao_acumulada = comissao_txt if comissao is not None else ""
+
+        # Managers (non-trainees): keep Paga/Bonus/Total empty, but show Acomul.
+        if row["is_manager"] and not row["is_trainee"]:
+            return pd.Series([premiacao_acumulada, "", "", ""])
+
+        meta = br_text_to_float(row.get("Meta", ""))
+        # CHANGED: Use VR + 40% APP instead of Valor Realizado
+        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
+
+        # Defaults
+        premiacao_paga = ""
+        bonus = ""
+        total = ""
+
+        # Guard clauses
+        if meta is None or meta == 0 or comissao is None:
+            return pd.Series([premiacao_acumulada, premiacao_paga, bonus, total])
+
+        if vr_plus_40 is None:
+            vr_plus_40 = 0.0
+
+        percentual = vr_plus_40 / meta
+
+        # Premiação Paga
+        paga = comissao * 0.5 if percentual < 0.80 else comissao
+        premiacao_paga = float_to_br_text_2(paga)
+
+        # BONUS
+        bonus_val = 0.0
+        if 1.05 <= percentual < 1.10:
+            bonus_val = 75.0
+        elif percentual >= 1.10:
+            bonus_val = 150.0
+
+        bonus = float_to_br_text_2(bonus_val) if bonus_val > 0 else ""
+
+        # TOTAL (COMISSOES-based)
+        total_val = paga + bonus_val
+        total = float_to_br_text_2(total_val)
+
+        return pd.Series([premiacao_acumulada, premiacao_paga, bonus, total])
+
+    df[[
+        "Premiação Acomul.",
+        "Premiação Paga",
+        "BONUS",
+        "Premiação TOTAL"
+    ]] = df.apply(calculate_row, axis=1)
+
+    # Cleanup
+    df = df.drop(columns=[
+        "Código_key",
+        "Valor_Comissao_Total",
+        "Valor Comissão_str",
+        "is_manager",
+        "is_trainee",
+    ])
+
+    logging.info("Premiações updated successfully using VR + 40% APP.")
+    return df
 
 def populate_valor_diario_recomendado(df_calc):
     logging.info("Calculating Valor Diário Recomendado...")
@@ -1196,21 +1370,20 @@ def populate_valor_diario_recomendado(df_calc):
         return df_calc
 
     # --------------------------------------------------
-    # Row calculation - NOW USING VR + 40% APP
+    # Row calculation
     # --------------------------------------------------
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
-        # Use VR + 40% APP instead of Valor Realizado
-        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
+        realizado = br_text_to_float(row["Valor Realizado"])
 
         # Guard clauses
         if meta is None or meta == 0:
             return ""
 
-        if vr_plus_40 is None:
-            vr_plus_40 = 0.0
+        if realizado is None:
+            realizado = 0.0
 
-        restante = meta - vr_plus_40
+        restante = meta - realizado
 
         # Meta already achieved
         if restante <= 0:
@@ -1284,8 +1457,7 @@ def update_premiacao_from_comissoes(sheet, df_calc):
 
     def calculate_premiacao(row):
         meta = br_text_to_float(row.get("Meta"))
-        # CHANGED: Use VR + 40% APP instead of Valor Realizado
-        realizado = br_text_to_float(row.get("VR + 40% APP", ""))
+        realizado = br_text_to_float(row.get("Valor Realizado"))
         comissao = br_text_to_float(row.get("Valor Comissão_str"))
     
         # Guard clauses
@@ -1325,7 +1497,7 @@ def update_premiacao_from_comissoes(sheet, df_calc):
 # --------------------------------------------------
 # Step 1: build calc base (ID, Filial, Código, Colaborador, Função)
 # --------------------------------------------------
-def build_calc_base(filtered_user_df):
+'''def build_calc_base(filtered_user_df):
     logging.info("Building calc base columns...")
     
     # Make a copy to avoid modifying the original
@@ -1372,7 +1544,90 @@ def build_calc_base(filtered_user_df):
         "Colaborador": df["Nome"],  # Changed from "Funcionário" to "Nome"
         "Meta": "",
         "Valor Realizado": "",
-        "VR + 40% APP": "",  # NEW COLUMN
+        "Valor Restante": "",
+        "Progresso": "",
+        "Função": df["Função_calc"],
+        "Premiação Acomul.": "",
+        "Premiação Paga": "",
+        "BONUS": "",
+        "Premiação TOTAL": ""
+    })
+
+    # Filter by allowed Funções
+    ALLOWED_FUNCOES = {
+        "FARMACEUTICO",
+        "OPERADOR DE CAIXA",
+        "OPERADORA DE CAIXA",
+        "GERENTE",
+        "GERENTE FARMACEUTICO",
+        "PROMOTOR DE VENDAS",
+        "SUBGERENTE",
+    }
+    
+    calc_df["Função"] = (
+        calc_df["Função"]
+        .astype(str)
+        .str.upper()
+        .str.strip()
+    )
+    
+    calc_df = calc_df[calc_df["Função"].isin(ALLOWED_FUNCOES)]
+
+    # Sort by Filial (A–Z)
+    calc_df = calc_df.sort_values(by=["Filial", "Colaborador"]).reset_index(drop=True)
+
+    logging.info(f"Calc rows generated: {len(calc_df)}")
+    return calc_df'''
+
+def build_calc_base(filtered_user_df):
+    logging.info("Building calc base columns...")
+    
+    # Make a copy to avoid modifying the original
+    df = filtered_user_df.copy()
+    
+    if df.empty:
+        logging.warning("No users found in filtered_user sheet.")
+        return pd.DataFrame()
+
+    # Filial: F01 → 1 (if needed - adjust based on your actual data format)
+    # Check if Filial contains "F" prefix
+    df["Filial_calc"] = (
+        df["Filial"]
+        .astype(str)
+        .str.replace("F", "", regex=False)
+        .astype(int)
+    )
+
+    # Código: remove .0 safely
+    df["Código"] = (
+        df["Código"]
+        .astype(str)
+        .str.replace(".0", "", regex=False)
+        .astype(int)
+    )
+
+    # ID: Filial + Código
+    df["ID"] = (
+        df["Filial_calc"].astype(str) +
+        df["Código"].astype(str)
+    )
+
+    # Função: from Cargo Atual
+    df["Função_calc"] = (
+        df["Cargo atual"]
+        .astype(str)
+        .apply(lambda x: x.split("-", 1)[1].strip() if "-" in x else x)
+    )
+
+    calc_df = pd.DataFrame({
+        "ID": df["ID"],
+        "Filial": df["Filial_calc"],
+        "Código": df["Código"],
+        "Colaborador": df["Nome"],
+        "Meta": "",
+        "Valor Realizado": "",
+        "VR + 40% APP": "",  # NEW COLUMN - will hold Valor Realizado + 40% VT
+        "Valor Restante": "",
         "Progresso": "",
         "Função": df["Função_calc"],
         "Premiação Acomul.": "",
@@ -1588,6 +1843,74 @@ def main():
         logging.warning("filtered_user source worksheet is empty.")
         return
 
+    df_calc = build_calc_base(filtered_user_df)
+
+    df_trainees = read_trainees(sheet)
+
+    df_meta_gerente = populate_meta_gerente(sheet)
+    if not df_meta_gerente.empty:
+        update_meta_gerente_sheet(sheet, df_meta_gerente)
+
+    existing_meta = read_existing_meta(sheet)
+
+    df_2_meta = read_2_meta(sheet)
+    df_calc = apply_2_meta_overrides(df_calc, df_2_meta)
+
+    df_afast = read_afastamentos(sheet)
+    df_calc = apply_afastamentos(df_calc, df_afast)
+
+    excluded_codigos = get_2_meta_codigos(df_2_meta)
+    
+    df_calc = restore_meta(df_calc, existing_meta)
+
+    if df_calc.empty:
+        logging.warning("Calc dataframe is empty. Nothing to upload.")
+        return
+
+    # Step 1: Update Valor Realizado from VENDAS_VENDEDOR
+    df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
+
+    # Step 2: Read VENDAS_548 and add 40% VT to Valor Realizado for non-managers
+    # This creates VR + 40% APP column with the SUM value
+    forty_percent_map = read_vendas_548(sheet)
+    df_calc = add_forty_percent_to_realizado(df_calc, forty_percent_map)
+
+    # Step 3: Calculate Valor Restante using VR + 40% APP (replaces old populate_valor_restante)
+    df_calc = populate_vr_plus_40_restante(df_calc)
+
+    # Step 4: Calculate Progresso using VR + 40% APP
+    df_calc = populate_progresso(df_calc)
+
+    # Step 5: Calculate premiações using VR + 40% APP
+    df_calc = update_premiacoes_from_comissoes(sheet, df_calc, df_trainees)
+
+    # Step 6: Create and populate META_GERENTE sheet
+    df_meta_gerente = populate_meta_gerente(sheet)
+    if not df_meta_gerente.empty:
+        update_meta_gerente_sheet(sheet, df_meta_gerente)
+        
+        # Step 7: Update manager/trainee premiação based on META_GERENTE
+        df_calc = update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees)
+
+    update_calc_sheet(sheet, df_calc)
+
+if __name__ == "__main__":
+    main()
+
+'''def main():
+    sheet_id = os.getenv("SHEET_ID")
+    if not sheet_id:
+        raise RuntimeError("SHEET_ID not found in environment variables.")
+
+    client = get_gspread_client()
+    sheet = client.open_by_key(sheet_id)
+
+    filtered_user_df = read_worksheet_as_df(sheet, "filtered_user")
+
+    if filtered_user_df.empty:
+        logging.warning("filtered_user source worksheet is empty.")
+        return
+
     # OLD: df_calc = build_calc_base(df_trier, df_sci)
     # NEW: Use filtered_user_df instead
     df_calc = build_calc_base(filtered_user_df)  # CHANGE THIS LINE - rename calc_base to df_calc
@@ -1627,16 +1950,7 @@ def main():
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
     # df_calc = populate_meta_for_testing(df_calc)
 
-    # NEW STEP: Read VENDAS_548 and add 40% VT to Valor Realizado for non-managers
-    forty_percent_map = read_vendas_548(sheet)
-    df_calc = add_forty_percent_to_realizado(df_calc, forty_percent_map)
-
-    # COMMENTED OUT: Old Valor Restante calculation
-    # df_calc = populate_valor_restante(df_calc)
-    
-    # NEW: Populate VR + 40% APP column (replaces Valor Restante)
-    df_calc = populate_vr_plus_forty_percent(df_calc)
-    
+    df_calc = populate_valor_restante(df_calc)
     df_calc = populate_progresso(df_calc)
 
     # First: Calculate premiações from COMISSOES (for everyone except managers)
@@ -1654,7 +1968,7 @@ def main():
         # For trainees: Adds META_GERENTE total to existing Premiação TOTAL
         df_calc = update_gerente_premiacao(df_calc, df_meta_gerente, df_trainees)
 
-    update_calc_sheet(sheet, df_calc)
+    update_calc_sheet(sheet, df_calc)'''
 
 if __name__ == "__main__":
     main()
