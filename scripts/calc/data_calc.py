@@ -141,6 +141,94 @@ def restore_valor_realizado(df_calc, valor_realizado_map):
     logging.info("Valor Realizado column restored successfully.")
     return df_calc
 
+def read_vendas_548(sheet):
+    """
+    Read VENDAS_548 worksheet and return a mapping from Filial to 40% VT value
+    """
+    try:
+        df = read_worksheet_as_df(sheet, "VENDAS_548")
+    except gspread.exceptions.WorksheetNotFound:
+        logging.info("VENDAS_548 sheet not found — skipping 40% VT addition.")
+        return {}
+
+    if df.empty:
+        logging.info("VENDAS_548 is empty — skipping 40% VT addition.")
+        return {}
+
+    df.columns = df.columns.str.strip()
+    
+    # Ensure required columns exist
+    if "Filial" not in df.columns or "40% VT" not in df.columns:
+        logging.warning("VENDAS_548 missing required columns (Filial or 40% VT).")
+        return {}
+    
+    # Create mapping from Filial to 40% VT value (as float)
+    forty_percent_map = {}
+    
+    for _, row in df.iterrows():
+        filial = str(row["Filial"]).strip()
+        forty_percent_value = br_text_to_float(row["40% VT"])
+        
+        if forty_percent_value is not None:
+            # If multiple rows for same Filial, sum them
+            if filial in forty_percent_map:
+                forty_percent_map[filial] += forty_percent_value
+            else:
+                forty_percent_map[filial] = forty_percent_value
+    
+    logging.info(f"Loaded 40% VT mapping for {len(forty_percent_map)} Filials")
+    return forty_percent_map
+
+def add_forty_percent_to_realizado(df_calc, forty_percent_map):
+    """
+    Add 40% VT value from VENDAS_548 to Valor Realizado for non-manager rows
+    and create VR + 40% APP column
+    """
+    if not forty_percent_map:
+        logging.info("No 40% VT data available — skipping addition.")
+        df_calc["VR + 40% APP"] = df_calc["Valor Realizado"]
+        return df_calc
+    
+    # Define manager functions that should NOT get the 40% addition
+    manager_funcoes = {"GERENTE", "SUBGERENTE", "GERENTE FARMACEUTICO"}
+    
+    # Create a copy of Valor Realizado as base for the new column
+    df_calc["VR + 40% APP"] = df_calc["Valor Realizado"].copy()
+    
+    # Normalize Filial for matching
+    df_calc["Filial_key"] = df_calc["Filial"].astype(str).str.strip()
+    
+    rows_updated = 0
+    
+    for idx, row in df_calc.iterrows():
+        funcao = str(row.get("Função", "")).strip().upper()
+        filial = str(row.get("Filial_key", "")).strip()
+        
+        # Skip managers
+        if funcao in manager_funcoes:
+            continue
+        
+        # Check if we have 40% VT value for this Filial
+        if filial in forty_percent_map:
+            # Get current Valor Realizado as float
+            valor_realizado = br_text_to_float(row.get("Valor Realizado", ""))
+            if valor_realizado is None:
+                valor_realizado = 0.0
+            
+            # Add 40% VT value
+            forty_percent_value = forty_percent_map[filial]
+            new_value = valor_realizado + forty_percent_value
+            
+            # Update the VR + 40% APP column
+            df_calc.at[idx, "VR + 40% APP"] = float_to_br_text_2(new_value)
+            rows_updated += 1
+    
+    # Clean up temporary column
+    df_calc = df_calc.drop(columns=["Filial_key"])
+    
+    logging.info(f"Added 40% VT to {rows_updated} rows (managers excluded)")
+    return df_calc
+
 def populate_meta_gerente(sheet):
     """
     Populate META_GERENTE worksheet with calculations based on VENDAS_FILIAL,
@@ -807,32 +895,65 @@ def float_to_br_text_2(value):
     except Exception:
         return ""
 
-def populate_valor_restante(df_calc):
-    logging.info("Calculating Valor Restante (Meta - Valor Realizado)...")
+# COMMENTED OUT: Old Valor Restante function - replaced by VR + 40% APP column
+# def populate_valor_restante(df_calc):
+#     logging.info("Calculating Valor Restante (Meta - Valor Realizado)...")
+# 
+#     def calculate_row(row):
+#         meta = br_text_to_float(row["Meta"])
+#         realizado = br_text_to_float(row["Valor Realizado"])
+# 
+#         # If Meta is empty → do nothing
+#         if meta is None:
+#             return ""
+# 
+#         # If Valor Realizado empty → treat as zero
+#         if realizado is None:
+#             realizado = 0.0
+# 
+#         restante = meta - realizado
+# 
+#         # Negative → wrap in ()
+#         if restante < 0:
+#             return f"({float_to_br_text(restante)})"
+# 
+#         return float_to_br_text(restante)
+# 
+#     df_calc["Valor Restante"] = df_calc.apply(calculate_row, axis=1)
+# 
+#     logging.info("Valor Restante populated.")
+#     return df_calc
 
+# NEW: Function to populate VR + 40% APP column (replaces Valor Restante)
+def populate_vr_plus_forty_percent(df_calc):
+    logging.info("Calculating VR + 40% APP (Meta - (Valor Realizado + 40% VT))...")
+    
+    # This function uses the existing "VR + 40% APP" column (already containing Valor Realizado + 40% VT)
+    # and calculates the remaining amount needed to reach Meta
+    
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
-
+        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
+        
         # If Meta is empty → do nothing
         if meta is None:
             return ""
-
-        # If Valor Realizado empty → treat as zero
-        if realizado is None:
-            realizado = 0.0
-
-        restante = meta - realizado
-
+        
+        # If VR + 40% APP is empty → treat as zero
+        if vr_plus_40 is None:
+            vr_plus_40 = 0.0
+        
+        restante = meta - vr_plus_40
+        
         # Negative → wrap in ()
         if restante < 0:
             return f"({float_to_br_text(restante)})"
-
+        
         return float_to_br_text(restante)
-
-    df_calc["Valor Restante"] = df_calc.apply(calculate_row, axis=1)
-
-    logging.info("Valor Restante populated.")
+    
+    df_calc["VR + 40% APP"] = df_calc.apply(calculate_row, axis=1)
+    
+    logging.info("VR + 40% APP populated.")
     return df_calc
 
 def remove_colaborador(df, nome):
@@ -956,7 +1077,7 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     df["is_trainee"] = df["ID"].astype(str).str.strip().isin(trainee_ids)
 
     # -------------------------------
-    # Calculations
+    # Calculations - NOW USING VR + 40% APP INSTEAD OF Valor Realizado
     # -------------------------------
     def calculate_row(row):
         comissao_txt = row.get("Valor Comissão_str", "")
@@ -970,7 +1091,8 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
             return pd.Series([premiacao_acumulada, "", "", ""])
 
         meta = br_text_to_float(row.get("Meta", ""))
-        realizado = br_text_to_float(row.get("Valor Realizado", ""))
+        # CHANGED: Use VR + 40% APP instead of Valor Realizado
+        realizado = br_text_to_float(row.get("VR + 40% APP", ""))
 
         # Defaults
         premiacao_paga = ""
@@ -1025,21 +1147,24 @@ def update_premiacoes_from_comissoes(sheet, df_calc, df_trainees):
     return df
 
 def populate_progresso(df_calc):
-    logging.info("Calculating Progresso (Valor Realizado / Meta)...")
+    logging.info("Calculating Progresso (VR + 40% APP / Meta)...")
+    
+    # CHANGED: Now uses VR + 40% APP instead of Valor Realizado
 
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
+        # Use VR + 40% APP instead of Valor Realizado
+        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
 
         # If Meta is empty or zero → do nothing
         if meta is None or meta == 0:
             return ""
 
-        # If Valor Realizado empty → treat as zero
-        if realizado is None:
-            realizado = 0.0
+        # If VR + 40% APP empty → treat as zero
+        if vr_plus_40 is None:
+            vr_plus_40 = 0.0
 
-        progresso = (realizado / meta) * 100
+        progresso = (vr_plus_40 / meta) * 100
 
         # Format as Brazilian percentage text
         progresso = round(progresso, 2)
@@ -1071,20 +1196,21 @@ def populate_valor_diario_recomendado(df_calc):
         return df_calc
 
     # --------------------------------------------------
-    # Row calculation
+    # Row calculation - NOW USING VR + 40% APP
     # --------------------------------------------------
     def calculate_row(row):
         meta = br_text_to_float(row["Meta"])
-        realizado = br_text_to_float(row["Valor Realizado"])
+        # Use VR + 40% APP instead of Valor Realizado
+        vr_plus_40 = br_text_to_float(row.get("VR + 40% APP", ""))
 
         # Guard clauses
         if meta is None or meta == 0:
             return ""
 
-        if realizado is None:
-            realizado = 0.0
+        if vr_plus_40 is None:
+            vr_plus_40 = 0.0
 
-        restante = meta - realizado
+        restante = meta - vr_plus_40
 
         # Meta already achieved
         if restante <= 0:
@@ -1158,7 +1284,8 @@ def update_premiacao_from_comissoes(sheet, df_calc):
 
     def calculate_premiacao(row):
         meta = br_text_to_float(row.get("Meta"))
-        realizado = br_text_to_float(row.get("Valor Realizado"))
+        # CHANGED: Use VR + 40% APP instead of Valor Realizado
+        realizado = br_text_to_float(row.get("VR + 40% APP", ""))
         comissao = br_text_to_float(row.get("Valor Comissão_str"))
     
         # Guard clauses
@@ -1245,7 +1372,7 @@ def build_calc_base(filtered_user_df):
         "Colaborador": df["Nome"],  # Changed from "Funcionário" to "Nome"
         "Meta": "",
         "Valor Realizado": "",
-        "Valor Restante": "",
+        "VR + 40% APP": "",  # NEW COLUMN
         "Progresso": "",
         "Função": df["Função_calc"],
         "Premiação Acomul.": "",
@@ -1500,7 +1627,16 @@ def main():
     df_calc = update_valor_realizado_from_vendas(sheet, df_calc, excluded_codigos)
     # df_calc = populate_meta_for_testing(df_calc)
 
-    df_calc = populate_valor_restante(df_calc)
+    # NEW STEP: Read VENDAS_548 and add 40% VT to Valor Realizado for non-managers
+    forty_percent_map = read_vendas_548(sheet)
+    df_calc = add_forty_percent_to_realizado(df_calc, forty_percent_map)
+
+    # COMMENTED OUT: Old Valor Restante calculation
+    # df_calc = populate_valor_restante(df_calc)
+    
+    # NEW: Populate VR + 40% APP column (replaces Valor Restante)
+    df_calc = populate_vr_plus_forty_percent(df_calc)
+    
     df_calc = populate_progresso(df_calc)
 
     # First: Calculate premiações from COMISSOES (for everyone except managers)
