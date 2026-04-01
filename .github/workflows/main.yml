@@ -57,30 +57,6 @@ jobs:
           #SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         #run: python scripts/calc/users_calc.py
 
-      - name: run scraper for vendas_filial
-        env:
-          trier_user: ${{ secrets.TRIER_USER }}
-          trier_password: ${{ secrets.TRIER_PASSWORD }}
-        run: python scripts/info_downloads/raw_vendas_filial.py
-
-      - name: vendas_filial procUp to google sheets
-        env:
-          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: python scripts/file_processing/vendas_filial_proc.py
-
-      - name: run scraper for comissoes
-        env:
-          trier_user: ${{ secrets.TRIER_USER }}
-          trier_password: ${{ secrets.TRIER_PASSWORD }}
-        run: python scripts/info_downloads/raw_comissao_vendedor.py
-
-      - name: comissoes procUp to google sheets
-        env:
-          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: python scripts/file_processing/comissao_proc.py
-
       - name: run scraper for vendas_vendedor
         env:
           trier_user: ${{ secrets.TRIER_USER }}
@@ -92,27 +68,3 @@ jobs:
           GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
           SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
         run: python scripts/file_processing/vendas_vendedor_proc.py
-
-      - name: run scraper for vendas_548
-        env:
-          trier_user: ${{ secrets.TRIER_USER }}
-          trier_password: ${{ secrets.TRIER_PASSWORD }}
-        run: python scripts/info_downloads/raw_vendas_548.py
-
-      - name: vendas_548 procUp to google sheets
-        env:
-          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: python scripts/file_processing/vendas_548_proc.py
-
-      - name: run scraper for vendas_vendedor_hb
-        env:
-          trier_user: ${{ secrets.TRIER_USER }}
-          trier_password: ${{ secrets.TRIER_PASSWORD }}
-        run: python scripts/info_downloads/raw_vendas_vendedor_hb.py
-
-      - name: vendas_vendedor_hb procUp to google sheets
-        env:
-          GSA_CREDENTIALS: ${{ secrets.GSA_CREDENTIALS }}
-          SHEET_ID: ${{ secrets.SPREADSHEET_ID }}
-        run: python scripts/file_processing/vendas_vendedor_hb_proc.py
