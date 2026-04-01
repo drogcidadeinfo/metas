@@ -83,8 +83,8 @@ try:
         data_inicio = today.replace(day=1).strftime('%d/%m/%Y')  # Primeiro dia do mês atual
         data_fim = today.strftime('%d/%m/%Y')  # hj
 
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="dat_inicial"]'))).send_keys(data_inicio) # (data_inicio)
-    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="dat_fim"]'))).send_keys(data_fim) # (data_fim)
+    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="dat_inicial"]'))).send_keys("01032026") # (data_inicio)
+    WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.XPATH, '//*[@id="dat_fim"]'))).send_keys("31032026") # (data_fim)
     print(f"Período configurado: {data_inicio} a {data_fim}", flush=True)
 
     # Configuração de agrupamento e saída
