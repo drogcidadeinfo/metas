@@ -149,7 +149,7 @@ class SCICSVProcessor:
             merged["Filial"] = pd.to_numeric(merged["Filial"], errors='coerce')
         
         # Verify we have the required columns
-        required_columns = ["Filial", "CPF", "Nome", "Cargo atual"]
+        required_columns = ["Filial", "CPF", "Nome", "Cargo atual", "E-mail"]
         missing_columns = [col for col in required_columns if col not in merged.columns]
         
         if missing_columns:
