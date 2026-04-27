@@ -109,6 +109,27 @@ class SCICSVProcessor:
         if not renamed:
             logging.info(f"✓ Added 'Filial' column with value {filial}")
         
+        # Clean email column if it exists
+        email_col = None
+        for col in df.columns:
+            if col.lower() in ['e-mail', 'email', 'mail', 'correio']:
+                email_col = col
+                break
+        
+        if email_col:
+            # Clean email column
+            df[email_col] = df[email_col].fillna('')  # Replace NaN with empty string
+            df[email_col] = df[email_col].astype(str)
+            df[email_col] = df[email_col].replace('nan', '', regex=False)
+            df[email_col] = df[email_col].apply(lambda x: x.strip() if x and x != 'nan' else '')
+            
+            # Rename to standard "e-mail" if needed
+            if email_col != 'e-mail':
+                df = df.rename(columns={email_col: 'e-mail'})
+        else:
+            # Create empty email column if it doesn't exist
+            df['e-mail'] = ''
+        
         return df
     
     def merge_all_files(self) -> pd.DataFrame:
@@ -191,27 +212,27 @@ class GoogleSheetsUploader:
             raise GoogleSheetsError(f"Authentication failed: {str(e)}")
 
     def clean_dataframe_for_upload(self, df: pd.DataFrame) -> pd.DataFrame:
-    """Clean DataFrame to handle NaN, None, and special characters"""
-    # Make a copy to avoid modifying the original
-    df = df.copy()
-    
-    # Replace NaN, None, and NaT with empty string
-    df = df.replace([pd.NA, pd.NaT, None, float('nan')], '')
-    
-    # For each column, clean the values
-    for col in df.columns:
-        # Convert to string
-        df[col] = df[col].astype(str)
+        """Clean DataFrame to handle NaN, None, and special characters"""
+        # Make a copy to avoid modifying the original
+        df = df.copy()
         
-        # Replace 'nan' (string version) with empty string
-        df[col] = df[col].replace('nan', '', regex=False)
-        df[col] = df[col].replace('None', '', regex=False)
+        # Replace NaN, None, and NaT with empty string
+        df = df.replace([pd.NA, pd.NaT, None, float('nan')], '')
         
-        # Remove line breaks and special characters that might break JSON
-        df[col] = df[col].str.replace(r'[\n\r\t]+', ' ', regex=True)
-        df[col] = df[col].str.replace('"', "'", regex=False)
-    
-    return df
+        # For each column, clean the values
+        for col in df.columns:
+            # Convert to string
+            df[col] = df[col].astype(str)
+            
+            # Replace 'nan' (string version) with empty string
+            df[col] = df[col].replace('nan', '', regex=False)
+            df[col] = df[col].replace('None', '', regex=False)
+            
+            # Remove line breaks and special characters that might break JSON
+            df[col] = df[col].str.replace(r'[\n\r\t]+', ' ', regex=True)
+            df[col] = df[col].str.replace('"', "'", regex=False)
+        
+        return df
     
     def upload_data(self, df: pd.DataFrame, sheet_name: str = "user_sci"):
         """Upload DataFrame to Google Sheets"""
@@ -240,8 +261,8 @@ class GoogleSheetsUploader:
         # 🔥 CLEAN THE DATAFRAME - This fixes the NaN issue
         df = self.clean_dataframe_for_upload(df)
         
-        # Prepare data
-        values = [df.columns.tolist()] + df.astype(str).values.tolist()
+        # Prepare data - No need to call astype(str) again since clean_dataframe_for_upload already did it
+        values = [df.columns.tolist()] + df.values.tolist()
         body = {"values": values}
         
         try:
