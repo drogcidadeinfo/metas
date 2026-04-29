@@ -105,7 +105,7 @@ try:
     time.sleep(2)
   
     WebDriverWait(driver, 10).until(EC.element_to_be_clickable((By.ID, "saida4"))).click()
-    time.sleep(2)
+    time.sleep(5)
 
     # trigger report download
     logging.info("Triggering report download...")
