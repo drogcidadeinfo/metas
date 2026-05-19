@@ -14,6 +14,22 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
+FINAL_COLUMNS = [
+    'Filial',
+    'CPF',
+    'Nome',
+    'Cargo atual',
+    'e-mail',
+    'Cidade',
+    'Sexo',
+    'Deficiência',
+    'País de nascimento',
+    'Data de nascimento',
+    'Idade',
+    'Data de admissão',
+    'Salário atual',
+]
+
 class GoogleSheetsError(Exception):
     """Custom exception for Google Sheets operations"""
     pass
@@ -147,11 +163,12 @@ class DataCombiner:
             sci_df = self._find_and_rename_column(sci_df, ['cargo atual', 'cargo'], 'Cargo atual', "users_sci")
             
             # Keep only needed columns from SCI
-            sci_needed_cols = []
+            '''sci_needed_cols = []
             for col in ['Filial', 'CPF', 'Cargo atual']:
                 if col in sci_df.columns:
-                    sci_needed_cols.append(col)
+                    sci_needed_cols.append(col) '''
             
+            sci_needed_cols = [col for col in FINAL_COLUMNS if col in sci_df.columns]           
             sci_df = sci_df[sci_needed_cols]
             logging.info(f"  Final SCI columns: {list(sci_df.columns)}")
             
@@ -171,7 +188,8 @@ class DataCombiner:
             logging.info(f"  Final Trier columns: {list(trier_df.columns)}")
             
             # Validate required columns are present
-            required_sci_cols = ['Filial', 'CPF', 'Cargo atual']
+            # required_sci_cols = ['Filial', 'CPF', 'Cargo atual']
+            required_sci_cols = FINAL_COLUMNS
             required_trier_cols = ['Código', 'CPF', 'Funcionário']
             
             missing_sci = [col for col in required_sci_cols if col not in sci_df.columns]
@@ -225,7 +243,7 @@ class DataCombiner:
             logging.info(f"  Rows after merge: {len(merged_df)}")
             
             # Create final DataFrame according to specification
-            logging.info("\n--- CREATING FINAL DATAFRAME ---")
+            '''logging.info("\n--- CREATING FINAL DATAFRAME ---")
             final_df = pd.DataFrame()
             
             # 1. Filial from users_sci
@@ -274,7 +292,20 @@ class DataCombiner:
                 final_df = final_df.drop(columns=['Filial_numeric', 'Código_numeric'])
                 
                 # Reset index
-                final_df = final_df.reset_index(drop=True)
+                final_df = final_df.reset_index(drop=True)'''
+
+            logging.info("\n--- CREATING FINAL DATAFRAME ---")
+
+            final_df = merged_df.copy()
+            
+            if 'Funcionário' in final_df.columns and 'Nome' not in final_df.columns:
+                final_df['Nome'] = final_df['Funcionário']
+            
+            for col in FINAL_COLUMNS:
+                if col not in final_df.columns:
+                    final_df[col] = ''
+            
+            final_df = final_df[FINAL_COLUMNS]
             
             logging.info(f"\n✓ Final DataFrame created with {len(final_df)} rows")
             logging.info(f"✓ Columns: {list(final_df.columns)}")
@@ -308,13 +339,15 @@ class DataCombiner:
             
             if df.empty:
                 logging.warning(f"  DataFrame is empty. Creating worksheet with headers only.")
-                headers = ['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual']
+                # headers = ['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual']
+                headers = FINAL_COLUMNS
                 worksheet.update([headers])
                 logging.info(f"  ✓ Created empty worksheet '{worksheet_name}' with headers")
                 return
             
             # Ensure all required columns are present
-            required_columns = ['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual']
+            # required_columns = ['Filial', 'Código', 'CPF', 'Nome', 'Cargo atual']
+            required_columns = FINAL_COLUMNS
             for col in required_columns:
                 if col not in df.columns:
                     df[col] = ''
