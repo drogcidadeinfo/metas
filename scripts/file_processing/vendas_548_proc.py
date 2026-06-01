@@ -75,6 +75,14 @@ def format_qtd_vendas(value):
     except Exception:
         return value
 
+def clean_nan_for_json(df):
+    """Replace NaN/NaT/None values with empty string for JSON compatibility"""
+    # Replace NaN with empty string
+    df = df.fillna('')
+    # Also handle numpy nan if any remain
+    df = df.replace([np.nan, np.inf, -np.inf], '', regex=False)
+    return df
+
 def process_excel_data(file_path):
     logging.info("Processing Excel file (vendas vendedor)...")
     
@@ -106,8 +114,8 @@ def process_excel_data(file_path):
     # Round to 2 decimal places
     df['40% VT'] = df['40% VT'].round(2)
     
-    # Optional: Add currency formatting (as string)
-    # df['40% VT'] = df['40% VT'].apply(lambda x: f'R$ {x:,.2f}' if pd.notna(x) else '')
+    # Clean NaN values before returning
+    df = clean_nan_for_json(df)
     
     logging.info(f"Rows processed: {len(df)}")
     
@@ -148,7 +156,22 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     
     df = df[COLUMN_ORDER]
 
+    # Convert DataFrame to list of lists, ensuring no NaN values
     values = [df.columns.tolist()] + df.values.tolist()
+    
+    # Final safety check: replace any remaining NaN/None in the values list
+    def clean_value(val):
+        if pd.isna(val) or val is None:
+            return ''
+        if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+            return ''
+        return val
+    
+    # Clean each value in the values list
+    cleaned_values = []
+    for row in values:
+        cleaned_row = [clean_value(cell) for cell in row]
+        cleaned_values.append(cleaned_row)
 
     start_cell = "A1"
     end_row = len(df) + 1
@@ -156,7 +179,12 @@ def update_google_sheet(df, sheet_id, worksheet_name, start_col="A"):
     dynamic_range = f"{start_cell}:{end_cell}"
 
     worksheet.batch_clear([dynamic_range])
-    worksheet.update(dynamic_range, values, value_input_option="USER_ENTERED")
+    
+    # Use retry mechanism for the update
+    def update_sheet():
+        worksheet.update(dynamic_range, cleaned_values, value_input_option="USER_ENTERED")
+    
+    retry_api_call(update_sheet)
 
     logging.info(f"Google Sheet updated: {dynamic_range}")
 
